@@ -1,0 +1,45 @@
+[project]
+name = "personal-ai-employee"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "watchdog>=3.0.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "black>=23.0",
+    "mypy>=1.0",
+]
+
+# Silver tier and above (not used in Bronze)
+ai = [
+    "anthropic>=0.40.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Pytest configuration
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+addopts = "--cov=agent_skills --cov-report=term-missing --cov-report=html"
+
+# Black code formatter configuration
+[tool.black]
+line-length = 100
+target-version = ['py311']
+
+# Mypy type checking configuration
+[tool.mypy]
+python_version = "3.11"
+strict = true
+check_untyped_defs = true
+disallow_untyped_defs = true
+warn_return_any = true
+warn_unused_ignores = true

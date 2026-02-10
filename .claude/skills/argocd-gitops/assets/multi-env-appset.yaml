@@ -1,0 +1,65 @@
+# Multi-Environment ApplicationSet
+#
+# Deploys the same application to multiple environments (dev, staging, prod)
+# using different configurations for each environment.
+
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: myapp-multi-env
+  namespace: argocd
+spec:
+  # List generator: explicitly define environments
+  generators:
+  - list:
+      elements:
+      - env: dev
+        url: https://kubernetes.default.svc
+        namespace: myapp-dev
+        revision: develop
+        replicas: "1"
+      - env: staging
+        url: https://kubernetes.default.svc
+        namespace: myapp-staging
+        revision: main
+        replicas: "2"
+      - env: prod
+        url: https://kubernetes.default.svc
+        namespace: myapp-prod
+        revision: v1.0.0
+        replicas: "3"
+
+  # Application template
+  template:
+    metadata:
+      name: 'myapp-{{env}}'
+      labels:
+        environment: '{{env}}'
+    spec:
+      project: default
+
+      source:
+        repoURL: https://github.com/myorg/myapp.git
+        targetRevision: '{{revision}}'
+        path: 'k8s/overlays/{{env}}'
+        kustomize:
+          commonAnnotations:
+            environment: '{{env}}'
+
+      destination:
+        server: '{{url}}'
+        namespace: '{{namespace}}'
+
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+        - CreateNamespace=true
+
+        retry:
+          limit: 5
+          backoff:
+            duration: 5s
+            factor: 2
+            maxDuration: 3m
