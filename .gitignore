@@ -1,0 +1,74 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+*.cover
+.hypothesis/
+
+# Type Checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Vault Data (User-generated content - don't commit)
+vault/Logs/*.md
+vault/Dashboard.md
+vault/Dashboard.md.bak.*
+vault/Dashboard.md.tmp
+vault/Inbox/*.md
+vault/Needs_Action/*.md
+vault/Done/*.md
+vault/Plans/*.md
+
+# Keep folder structure
+!vault/Inbox/.gitkeep
+!vault/Needs_Action/.gitkeep
+!vault/Done/.gitkeep
+!vault/Plans/.gitkeep
+!vault/Logs/.gitkeep
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+nohup.out

@@ -1,0 +1,52 @@
+# Simple ArgoCD Application Example
+#
+# Usage:
+#   kubectl apply -f hello-world-app.yaml
+#
+# This creates an ArgoCD Application that syncs a simple nginx deployment
+# from a Git repository to your Kubernetes cluster.
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hello-world
+  namespace: argocd
+  # Finalizer ensures proper cleanup
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  # Project name (use 'default' or create custom project)
+  project: default
+
+  # Source: Git repository containing Kubernetes manifests
+  source:
+    repoURL: https://github.com/argoproj/argocd-example-apps.git
+    targetRevision: HEAD
+    path: guestbook
+
+  # Destination: Target Kubernetes cluster and namespace
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+
+  # Sync policy: How ArgoCD should sync the application
+  syncPolicy:
+    # Automated sync (comment out for manual sync)
+    automated:
+      prune: true      # Delete resources not in Git
+      selfHeal: true   # Sync when cluster state drifts
+      allowEmpty: false
+
+    # Sync options
+    syncOptions:
+    - CreateNamespace=true   # Auto-create namespace if missing
+    - PrunePropagationPolicy=foreground
+    - PruneLast=true         # Prune resources last
+
+    # Retry policy for failed syncs
+    retry:
+      limit: 5               # Max retry attempts
+      backoff:
+        duration: 5s         # Initial retry delay
+        factor: 2            # Backoff multiplier
+        maxDuration: 3m      # Max retry delay
