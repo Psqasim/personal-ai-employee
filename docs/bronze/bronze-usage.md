@@ -13,7 +13,7 @@ Daily workflow, Claude Code integration, Dashboard format, and Company_Handbook.
 ps aux | grep watch_inbox.py
 
 # If not running, start it
-python scripts/watch_inbox.py ~/my-vault
+python3 scripts/watch_inbox.py ~/my-vault
 ```
 
 Or use PM2:
@@ -558,16 +558,16 @@ Run separate watchers for multiple vaults:
 
 ```bash
 # Terminal 1: Personal vault
-python scripts/watch_inbox.py ~/personal-vault
+python3 scripts/watch_inbox.py ~/personal-vault
 
 # Terminal 2: Work vault
-python scripts/watch_inbox.py ~/work-vault
+python3 scripts/watch_inbox.py ~/work-vault
 ```
 
 Or use PM2:
 ```bash
-pm2 start "python scripts/watch_inbox.py ~/personal-vault" --name personal-watcher
-pm2 start "python scripts/watch_inbox.py ~/work-vault" --name work-watcher
+pm2 start "python3 scripts/watch_inbox.py ~/personal-vault" --name personal-watcher
+pm2 start "python3 scripts/watch_inbox.py ~/work-vault" --name work-watcher
 ```
 
 ### Custom Polling Interval
@@ -580,7 +580,7 @@ polling_interval: 15  # Check every 15 seconds (faster)
 
 Or override via command-line (future feature - not in Bronze v0.1.0):
 ```bash
-python scripts/watch_inbox.py ~/my-vault --polling-interval 15
+python3 scripts/watch_inbox.py ~/my-vault --polling-interval 15
 ```
 
 ### Dashboard Backup Management

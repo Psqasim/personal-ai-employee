@@ -224,7 +224,7 @@ pytest tests/integration/test_performance.py::test_vault_with_1000_files -v
 #### Step 1: Initialize Vault
 
 ```bash
-python scripts/init_vault.py /tmp/test-vault
+python3 scripts/init_vault.py /tmp/test-vault
 ```
 
 **Expected**:
@@ -235,7 +235,7 @@ python scripts/init_vault.py /tmp/test-vault
 #### Step 2: Start Watcher
 
 ```bash
-python scripts/watch_inbox.py /tmp/test-vault
+python3 scripts/watch_inbox.py /tmp/test-vault
 ```
 
 **Expected**:
@@ -505,7 +505,7 @@ pytest tests/integration/test_performance.py::test_vault_scan_time -v
 **Measure**:
 ```bash
 # Start watcher
-python scripts/watch_inbox.py ~/my-vault &
+python3 scripts/watch_inbox.py ~/my-vault &
 PID=$!
 
 # Monitor memory usage

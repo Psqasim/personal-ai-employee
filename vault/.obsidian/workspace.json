@@ -183,13 +183,16 @@
       "bases:Create new base": false
     }
   },
-  "active": "53e0f1dd7b356752",
+  "active": "6714a593bf86016b",
   "lastOpenFiles": [
+    "Plans",
+    "Needs_Action",
+    "Done",
+    "Company_Handbook.md",
     "Dashboard.md.tmp",
     "Dashboard.md.bak.2026-02-10_22-29-29",
     "Inbox/test.md",
     "Logs/watcher-2026-02-10.md",
-    "Company_Handbook.md",
     "Inbox/2026-02-10-review-proposal.md",
     "Dashboard.md"
   ]

@@ -565,7 +565,7 @@ Scripts in `scripts/`:
 ```bash
 # Monitor network traffic during watcher runtime
 tcpdump -i any -n host $(hostname) &
-python scripts/watch_inbox.py ~/my-vault
+python3 scripts/watch_inbox.py ~/my-vault
 
 # Expected: Zero packets sent/received
 ```

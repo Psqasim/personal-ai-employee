@@ -32,10 +32,10 @@ cd personal-ai-employee
 pip install -e .[dev]
 
 # 2. Initialize your vault
-python scripts/init_vault.py ~/my-vault
+python3 scripts/init_vault.py ~/my-vault
 
 # 3. Start monitoring
-python scripts/watch_inbox.py ~/my-vault
+python3 scripts/watch_inbox.py ~/my-vault
 
 # 4. Drop a task and watch the magic happen ✨
 echo "# Review Proposal" > ~/my-vault/Inbox/task.md

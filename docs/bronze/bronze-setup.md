@@ -54,8 +54,8 @@ pytest      7.0+
 
 ```bash
 # Check Python modules import correctly
-python -c "from agent_skills.vault_watcher import read_vault_file; print('✓ Agent Skills OK')"
-python -c "from agent_skills.dashboard_updater import update_dashboard; print('✓ Dashboard Updater OK')"
+python3 -c "from agent_skills.vault_watcher import read_vault_file; print('✓ Agent Skills OK')"
+python3 -c "from agent_skills.dashboard_updater import update_dashboard; print('✓ Dashboard Updater OK')"
 ```
 
 ## Vault Initialization
@@ -64,10 +64,10 @@ python -c "from agent_skills.dashboard_updater import update_dashboard; print('�
 
 ```bash
 # Initialize vault at ~/my-vault
-python scripts/init_vault.py ~/my-vault
+python3 scripts/init_vault.py ~/my-vault
 
 # Or specify custom path
-python scripts/init_vault.py /path/to/vault
+python3 scripts/init_vault.py /path/to/vault
 ```
 
 Expected output:
@@ -106,7 +106,7 @@ If you need to recreate an existing vault:
 
 ```bash
 # WARNING: This will overwrite existing files
-python scripts/init_vault.py ~/my-vault --overwrite
+python3 scripts/init_vault.py ~/my-vault --overwrite
 ```
 
 ## Configuration
@@ -207,7 +207,7 @@ Valid values: 10-300 seconds (10 seconds minimum, 5 minutes maximum).
 
 ```bash
 # Start monitoring (Ctrl+C to stop)
-python scripts/watch_inbox.py ~/my-vault
+python3 scripts/watch_inbox.py ~/my-vault
 ```
 
 Expected output:
@@ -236,7 +236,7 @@ Install PM2 (Node.js process manager):
 npm install -g pm2
 
 # Start watcher as background service
-pm2 start "python scripts/watch_inbox.py ~/my-vault" --name bronze-watcher
+pm2 start "python3 scripts/watch_inbox.py ~/my-vault" --name bronze-watcher
 
 # View logs
 pm2 logs bronze-watcher
@@ -290,7 +290,7 @@ sudo journalctl -u bronze-watcher -f
 
 1. **Start watcher** (if not already running):
    ```bash
-   python scripts/watch_inbox.py ~/my-vault
+   python3 scripts/watch_inbox.py ~/my-vault
    ```
 
 2. **Drop test file** in Inbox/:
@@ -334,7 +334,7 @@ sudo journalctl -u bronze-watcher -f
 
 **Exit code 1** (Invalid vault path):
 ```bash
-python scripts/init_vault.py ~/my-vault
+python3 scripts/init_vault.py ~/my-vault
 ```
 
 **Exit code 2** (Handbook validation failed):
