@@ -1,0 +1,63 @@
+{
+  "priority_analysis": {
+    "urgent_client": {
+      "priority": "High",
+      "category": "Work",
+      "reasoning": "Client request with urgent deadline"
+    },
+    "routine_task": {
+      "priority": "Medium",
+      "category": "Work",
+      "reasoning": "Regular business activity without urgency"
+    },
+    "low_priority": {
+      "priority": "Low",
+      "category": "Personal",
+      "reasoning": "Non-urgent personal item"
+    },
+    "work_invoice": {
+      "priority": "High",
+      "category": "Work",
+      "reasoning": "Invoice requires timely processing"
+    },
+    "vacation_plan": {
+      "priority": "Low",
+      "category": "Personal",
+      "reasoning": "Personal leisure planning"
+    },
+    "emergency": {
+      "priority": "High",
+      "category": "Urgent",
+      "reasoning": "Emergency situation requiring immediate attention"
+    }
+  },
+  "plan_generation": {
+    "marketing_campaign": {
+      "objective": "Plan and execute Q1 marketing campaign",
+      "steps": [
+        {"step_number": 1, "description": "Define campaign goals and KPIs", "dependencies": [], "approval_required": true},
+        {"step_number": 2, "description": "Create content calendar", "dependencies": [1], "approval_required": true},
+        {"step_number": 3, "description": "Design marketing assets", "dependencies": [2], "approval_required": true},
+        {"step_number": 4, "description": "Launch campaign", "dependencies": [3], "approval_required": true},
+        {"step_number": 5, "description": "Monitor and optimize", "dependencies": [4], "approval_required": false}
+      ]
+    }
+  },
+  "anthropic_api_response": {
+    "id": "msg_01XFDUDYJgAACzvnptvVoYEL",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"priority\": \"High\", \"category\": \"Work\", \"reasoning\": \"Urgent client request requires immediate attention\"}"
+      }
+    ],
+    "model": "claude-3-5-sonnet-20241022",
+    "stop_reason": "end_turn",
+    "usage": {
+      "input_tokens": 150,
+      "output_tokens": 30
+    }
+  }
+}

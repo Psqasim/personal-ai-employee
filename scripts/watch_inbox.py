@@ -6,16 +6,32 @@ Polling-based approach with 30-second intervals (configurable via Company_Handbo
 """
 
 import argparse
+import asyncio
 import logging
+import os
 import signal
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Load .env file before anything else
+def _load_env() -> None:
+    env_file = Path(__file__).parent.parent / ".env"
+    if env_file.exists():
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                os.environ.setdefault(key, value)
+
+_load_env()
 
 from agent_skills.dashboard_updater import update_dashboard
 from agent_skills.vault_watcher import validate_handbook
@@ -102,6 +118,66 @@ def log_event(vault_path: Path, event_type: str, details: Dict) -> None:
         logger.error(f"Failed to write log: {e}")
 
 
+def _analyze_file(vault_path: Path, filename: str) -> Tuple[str, str]:
+    """Run AI analysis on a new inbox file (Silver tier enhancement).
+
+    Falls back to Bronze defaults if AI is disabled or unavailable.
+
+    Args:
+        vault_path: Path to vault root
+        filename: Relative path to the file (e.g., "Inbox/task.md")
+
+    Returns:
+        Tuple of (priority, category) strings
+    """
+    ai_enabled = os.getenv("ENABLE_AI_ANALYSIS", "false").lower() == "true"
+    api_key = os.getenv("CLAUDE_API_KEY", "").strip()
+
+    if not ai_enabled:
+        logger.debug("AI analysis disabled (ENABLE_AI_ANALYSIS=false)")
+        return "Medium", "Uncategorized"
+
+    if not api_key:
+        logger.warning("AI analysis enabled but CLAUDE_API_KEY is not set in .env — using Bronze defaults")
+        return "Medium", "Uncategorized"
+
+    logger.info(f"AI analyzing: {filename}")
+
+    try:
+        from agent_skills.ai_analyzer import analyze_priority
+
+        file_path = vault_path / filename
+        title = Path(filename).stem
+
+        snippet = ""
+        if file_path.exists():
+            content = file_path.read_text(encoding="utf-8", errors="ignore")
+            if content.startswith("---"):
+                parts = content.split("---", 2)
+                snippet = parts[2].strip()[:200] if len(parts) > 2 else content[:200]
+            else:
+                snippet = content[:200]
+
+        result = asyncio.run(analyze_priority(title, snippet, vault_path))
+        priority = result.get("priority", "Medium")
+        category = result.get("category", "Uncategorized")
+        cached = result.get("cached", False)
+        fallback = result.get("fallback", False)
+
+        if fallback:
+            logger.warning(f"AI fallback (API error) for {filename} → Medium/Uncategorized")
+        elif cached:
+            logger.info(f"AI result (cached) for {filename} → Priority={priority} Category={category}")
+        else:
+            logger.info(f"AI result for {filename} → Priority={priority} Category={category}")
+
+        return priority, category
+
+    except Exception as e:
+        logger.warning(f"AI analysis failed for {filename}: {e}. Using Bronze defaults.")
+        return "Medium", "Uncategorized"
+
+
 def poll_inbox(vault_path: Path, config: Dict) -> None:
     """Main polling loop - monitors Inbox/ and updates Dashboard.
 
@@ -111,7 +187,14 @@ def poll_inbox(vault_path: Path, config: Dict) -> None:
     """
     global watcher_running
 
-    processed_files: Set[str] = set()
+    # Seed processed_files from current Dashboard to avoid re-adding on restart
+    from agent_skills.dashboard_updater import parse_dashboard
+    dashboard_path = vault_path / "Dashboard.md"
+    existing_tasks = parse_dashboard(dashboard_path)
+    processed_files: Set[str] = {t["filename"] for t in existing_tasks}
+    if processed_files:
+        logger.info(f"Loaded {len(processed_files)} existing files from Dashboard (skip re-processing)")
+
     polling_interval = config.get("polling_interval", 30)
 
     logger.info(f"Starting file watcher (polling interval: {polling_interval}s)")
@@ -137,8 +220,18 @@ def poll_inbox(vault_path: Path, config: Dict) -> None:
                         "file": filename
                     })
 
-                # Update dashboard
-                success = update_dashboard(str(vault_path), new_files)
+                # Apply AI analysis if enabled (Silver tier)
+                enriched_files = []
+                for filename, status in new_files:
+                    priority, category = _analyze_file(vault_path, filename)
+                    enriched_files.append((filename, status, priority, category))
+
+                # Update dashboard with AI enrichment
+                success = update_dashboard(
+                    str(vault_path),
+                    [(f, s) for f, s, _, _ in enriched_files],
+                    ai_results=[(p, c) for _, _, p, c in enriched_files],
+                )
 
                 if success:
                     logger.info("Dashboard updated successfully")

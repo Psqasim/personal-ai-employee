@@ -1,0 +1,54 @@
+{
+  "messages_list": {
+    "messages": [
+      {"id": "18d3a2f1c4b5e6a7", "threadId": "18d3a2f1c4b5e6a7"},
+      {"id": "18d3a2f1c4b5e6a8", "threadId": "18d3a2f1c4b5e6a8"}
+    ],
+    "resultSizeEstimate": 2
+  },
+  "message_detail_urgent": {
+    "id": "18d3a2f1c4b5e6a7",
+    "threadId": "18d3a2f1c4b5e6a7",
+    "labelIds": ["IMPORTANT", "UNREAD", "INBOX"],
+    "payload": {
+      "headers": [
+        {"name": "From", "value": "client@example.com"},
+        {"name": "Subject", "value": "URGENT: Invoice #1234 needs approval"},
+        {"name": "Date", "value": "Thu, 12 Feb 2026 10:00:00 +0000"}
+      ]
+    },
+    "snippet": "Please review and approve invoice #1234 for $5,000. This is urgent as payment is due by end of day.",
+    "internalDate": "1739354400000"
+  },
+  "message_detail_routine": {
+    "id": "18d3a2f1c4b5e6a8",
+    "threadId": "18d3a2f1c4b5e6a8",
+    "labelIds": ["IMPORTANT", "UNREAD", "INBOX"],
+    "payload": {
+      "headers": [
+        {"name": "From", "value": "team@company.com"},
+        {"name": "Subject", "value": "Weekly team meeting notes"},
+        {"name": "Date", "value": "Thu, 12 Feb 2026 09:00:00 +0000"}
+      ]
+    },
+    "snippet": "Here are the notes from our weekly team meeting. Action items are highlighted below.",
+    "internalDate": "1739350800000"
+  },
+  "empty_list": {
+    "resultSizeEstimate": 0
+  },
+  "error_403": {
+    "error": {
+      "code": 403,
+      "message": "Request had insufficient authentication scopes.",
+      "status": "PERMISSION_DENIED"
+    }
+  },
+  "error_429": {
+    "error": {
+      "code": 429,
+      "message": "Resource has been exhausted (e.g. check quota).",
+      "status": "RESOURCE_EXHAUSTED"
+    }
+  }
+}

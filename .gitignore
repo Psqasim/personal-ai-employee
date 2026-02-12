@@ -75,3 +75,21 @@ nohup.out
 
 # Personal context files
 *.pdf
+
+# Silver Tier - Credentials (never commit)
+~/.config/personal-ai-employee/
+vault/Logs/API_Cache/
+vault/Logs/API_Usage/
+vault/Logs/gmail_processed_ids.txt
+vault/Logs/gmail_watcher_errors.md
+vault/Logs/whatsapp_watcher_errors.md
+vault/Logs/cost_alerts.md
+vault/Logs/MCP_Actions/
+vault/Pending_Approval/
+vault/Approved/
+gmail_token.json
+whatsapp_session/
+
+# PM2 process manager
+.pm2/
+ecosystem.config.js.bak

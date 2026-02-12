@@ -13,7 +13,7 @@ All operations use atomic file writes to prevent corruption.
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 
 def parse_dashboard(dashboard_path: Path) -> List[Dict[str, str]]:
@@ -23,7 +23,7 @@ def parse_dashboard(dashboard_path: Path) -> List[Dict[str, str]]:
         dashboard_path: Path to Dashboard.md file
 
     Returns:
-        List of task dictionaries with keys: filename, date_added, status, priority
+        List of task dictionaries with keys: filename, date_added, status, priority, category
 
     Raises:
         ValueError: If Dashboard.md is corrupted (invalid table format)
@@ -46,21 +46,23 @@ def parse_dashboard(dashboard_path: Path) -> List[Dict[str, str]]:
     if table_start is None:
         return []
 
-    # Parse task rows
+    # Parse task rows - supports both 4-column (Bronze) and 5-column (Silver) format
     for line in lines[table_start:]:
         if not line.strip() or not line.strip().startswith("|"):
             break
 
         columns = [col.strip() for col in line.split("|")[1:-1]]
-        if len(columns) == 4:
+        if len(columns) >= 4:
             # Remove wiki link syntax from filename
             filename = columns[0].strip("[]")
-            tasks.append({
+            task = {
                 "filename": filename,
                 "date_added": columns[1],
                 "status": columns[2],
-                "priority": columns[3]
-            })
+                "priority": columns[3],
+                "category": columns[4] if len(columns) >= 5 else "Uncategorized",
+            }
+            tasks.append(task)
 
     return tasks
 
@@ -74,12 +76,29 @@ def render_dashboard(tasks: List[Dict[str, str]]) -> str:
     Returns:
         Complete Dashboard.md content as string
     """
+    import os
+
+    ai_enabled = os.getenv("ENABLE_AI_ANALYSIS", "false").lower() == "true"
+
+    # Sort tasks by priority order (Urgent → High → Medium → Low), then by date_added
+    priority_order = {"Urgent": 0, "High": 1, "Medium": 2, "Low": 3}
+    sorted_tasks = sorted(
+        tasks,
+        key=lambda t: (
+            priority_order.get(t.get("priority", "Medium"), 2),
+            t.get("date_added", ""),
+        ),
+    )
+
     # Calculate statistics
     stats = {
-        "total": len(tasks),
-        "inbox": sum(1 for t in tasks if t["status"].lower() == "inbox"),
-        "needs_action": sum(1 for t in tasks if t["status"].lower() == "needs action"),
-        "done": sum(1 for t in tasks if t["status"].lower() == "done")
+        "total": len(sorted_tasks),
+        "inbox": sum(1 for t in sorted_tasks if t["status"].lower() == "inbox"),
+        "needs_action": sum(1 for t in sorted_tasks if t["status"].lower() == "needs action"),
+        "done": sum(1 for t in sorted_tasks if t["status"].lower() == "done"),
+        "work": sum(1 for t in sorted_tasks if t.get("category", "") == "Work"),
+        "personal": sum(1 for t in sorted_tasks if t.get("category", "") == "Personal"),
+        "urgent": sum(1 for t in sorted_tasks if t.get("category", "") == "Urgent"),
     }
 
     # Render markdown
@@ -87,16 +106,32 @@ def render_dashboard(tasks: List[Dict[str, str]]) -> str:
         "# Personal AI Employee Dashboard",
         "",
         "## Task Overview",
-        "| Filename | Date Added | Status | Priority |",
-        "|----------|-----------|--------|----------|"
     ]
 
-    # Add task rows
-    for task in tasks:
-        filename_link = f"[[{task['filename']}]]"
-        lines.append(
-            f"| {filename_link} | {task['date_added']} | {task['status']} | {task['priority']} |"
-        )
+    # Silver tier: include Category column when AI is enabled
+    if ai_enabled:
+        lines.extend([
+            "| Filename | Date Added | Status | Priority | Category |",
+            "|----------|-----------|--------|----------|----------|",
+        ])
+        for task in sorted_tasks:
+            filename_link = f"[[{task['filename']}]]"
+            category = task.get("category", "Uncategorized")
+            lines.append(
+                f"| {filename_link} | {task['date_added']} | {task['status']} "
+                f"| {task['priority']} | {category} |"
+            )
+    else:
+        # Bronze format (backward compatible)
+        lines.extend([
+            "| Filename | Date Added | Status | Priority |",
+            "|----------|-----------|--------|----------|",
+        ])
+        for task in sorted_tasks:
+            filename_link = f"[[{task['filename']}]]"
+            lines.append(
+                f"| {filename_link} | {task['date_added']} | {task['status']} | {task['priority']} |"
+            )
 
     # Add statistics section
     lines.extend([
@@ -106,10 +141,23 @@ def render_dashboard(tasks: List[Dict[str, str]]) -> str:
         f"- **Inbox**: {stats['inbox']}",
         f"- **Needs Action**: {stats['needs_action']}",
         f"- **Done**: {stats['done']}",
+    ])
+
+    # Silver tier category statistics
+    if ai_enabled:
+        lines.extend([
+            "",
+            "### Category Breakdown",
+            f"- **Work Tasks**: {stats['work']}",
+            f"- **Personal Tasks**: {stats['personal']}",
+            f"- **Urgent Tasks**: {stats['urgent']}",
+        ])
+
+    lines.extend([
         "",
         "---",
         f"*Last Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*",
-        ""
+        "",
     ])
 
     return "\n".join(lines)
@@ -168,12 +216,18 @@ def validate_dashboard(dashboard_path: Path) -> bool:
         return False
 
 
-def update_dashboard(vault_path: str, new_files: List[Tuple[str, str]]) -> bool:
+def update_dashboard(
+    vault_path: str,
+    new_files: List[Tuple[str, str]],
+    ai_results: Optional[List[Tuple[str, str]]] = None,
+) -> bool:
     """Update Dashboard.md with new tasks (atomic write with backup).
 
     Args:
         vault_path: Absolute path to vault root directory
         new_files: List of (filename, status) tuples to add to dashboard
+        ai_results: Optional list of (priority, category) tuples from Silver AI analysis.
+                    Must match length and order of new_files if provided.
 
     Returns:
         True if update successful, False if failed
@@ -196,12 +250,19 @@ def update_dashboard(vault_path: str, new_files: List[Tuple[str, str]]) -> bool:
 
         # Step 3: Add new tasks
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
-        for filename, status in new_files:
+        for i, (filename, status) in enumerate(new_files):
+            priority = "Medium"
+            category = "Uncategorized"
+
+            if ai_results and i < len(ai_results):
+                priority, category = ai_results[i]
+
             existing_tasks.append({
                 "filename": filename,
                 "date_added": current_time,
                 "status": status,
-                "priority": "Medium"  # Bronze tier default
+                "priority": priority,
+                "category": category,
             })
 
         # Step 4: Render markdown
