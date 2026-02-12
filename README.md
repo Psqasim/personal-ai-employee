@@ -7,7 +7,12 @@
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Tested](https://img.shields.io/badge/tests-passing-brightgreen.svg)](docs/bronze/bronze-testing.md)
 
-**Bronze Tier**: Foundation AI Employee - 100% offline, local-first vault monitoring with automatic dashboard updates.
+| Tier | Status | Highlights |
+|------|--------|------------|
+| **Bronze** | ✅ Complete | 100% offline vault monitoring, auto dashboard |
+| **Silver** | ✅ MVP | AI priority analysis, task categorization, Gmail watcher |
+| **Gold** | ⏳ Coming soon | Multi-step execution, external APIs, task decomposition |
+| **Platinum** | ⏳ Future | Reflection loops, 24/7 cloud deployment, multi-agent |
 
 ---
 
@@ -23,7 +28,9 @@ Drop a markdown file in your Obsidian vault's Inbox folder. Within 30 seconds, y
 
 ---
 
-## 🚀 Quick Start (5 Minutes)
+## 🚀 Quick Start
+
+### Bronze (Offline, No API Required)
 
 ```bash
 # 1. Clone and install
@@ -41,9 +48,28 @@ python3 scripts/watch_inbox.py ~/my-vault
 echo "# Review Proposal" > ~/my-vault/Inbox/task.md
 ```
 
-**That's it!** Your Dashboard.md updates automatically.
+📖 **Bronze Setup Guide**: [docs/bronze/bronze-setup.md](docs/bronze/bronze-setup.md)
 
-📖 **Detailed Setup Guide**: [docs/bronze/bronze-setup.md](docs/bronze/bronze-setup.md)
+### Silver (AI-Powered, Requires Claude API Key)
+
+```bash
+# 1. Get your Claude API key from https://console.anthropic.com/
+# 2. Configure .env
+cp .env.example .env
+# Set: ENABLE_AI_ANALYSIS=true, CLAUDE_API_KEY=sk-ant-api03-...
+
+# 3. Install Silver dependencies
+pip install anthropic>=0.18.0 google-api-python-client>=2.80.0 \
+  google-auth-oauthlib>=1.0.0
+
+# 4. Start watcher (AI analysis enabled automatically)
+python3 scripts/watch_inbox.py
+
+# 5. Drop a task — Dashboard now shows AI-assigned priority + category
+echo "# Urgent client proposal — due today" > vault/Inbox/task.md
+```
+
+⚡ **Silver Quickstart**: [docs/silver/quickstart.md](docs/silver/quickstart.md)
 
 ---
 
@@ -82,6 +108,8 @@ echo "# Review Proposal" > ~/my-vault/Inbox/task.md
 
 ## 📚 Documentation
 
+### Bronze Tier
+
 | Guide | Description | Link |
 |-------|-------------|------|
 | **Setup** | Installation, configuration, starting the watcher | [bronze-setup.md](docs/bronze/bronze-setup.md) |
@@ -89,10 +117,19 @@ echo "# Review Proposal" > ~/my-vault/Inbox/task.md
 | **Usage** | Daily workflow, Claude Code integration | [bronze-usage.md](docs/bronze/bronze-usage.md) |
 | **Testing** | Unit tests, integration tests, troubleshooting | [bronze-testing.md](docs/bronze/bronze-testing.md) |
 
+### Silver Tier
+
+| Guide | Description | Link |
+|-------|-------------|------|
+| **Quickstart** | 5-minute setup: API key + Gmail | [silver/quickstart.md](docs/silver/quickstart.md) |
+| **Setup Guide** | Full setup: WhatsApp, LinkedIn, PM2, MCP | [silver/setup-guide.md](docs/silver/setup-guide.md) |
+| **Testing** | Manual testing guide for Silver features | [silver/manual-testing-guide.md](docs/silver/manual-testing-guide.md) |
+
 ---
 
-## 🎯 Features (Bronze Tier)
+## 🎯 Features
 
+### Bronze Tier (Foundation)
 - ✅ **Automatic File Detection** - Monitors Inbox/ every 30 seconds
 - ✅ **Dashboard Auto-Update** - Maintains task table with wiki links
 - ✅ **Event Logging** - All actions logged to vault/Logs/
@@ -101,28 +138,43 @@ echo "# Review Proposal" > ~/my-vault/Inbox/task.md
 - ✅ **100% Offline** - No network requests, all local processing
 - ✅ **Obsidian Compatible** - Standard markdown, preserves formatting
 
+### Silver Tier MVP (AI-Powered)
+- ✅ **AI Priority Analysis** - Claude assigns High/Medium/Low priority to every task
+- ✅ **Task Categorization** - Work / Personal / Urgent auto-classification
+- ✅ **24h Response Caching** - Minimizes API costs (typical: <$0.01/day)
+- ✅ **PII Sanitization** - Emails, phones, and account numbers stripped before API calls
+- ✅ **Gmail Watcher** - Monitors important emails, creates vault tasks automatically
+- ✅ **Graceful Fallback** - Reverts to Bronze behavior when API is unavailable
+
 ---
 
 ## 🗺️ Roadmap
 
 | Tier | Status | Capabilities |
 |------|--------|-------------|
-| **Bronze** | ✅ **Available Now** | Vault monitoring, dashboard updates, agent skills API |
-| **Silver** | 🔄 Q2 2026 | AI priority analysis, auto file movement, email integration |
-| **Gold** | 📅 Q3 2026 | Multi-step execution, external APIs, task decomposition |
-| **Platinum** | 📅 Q4 2026 | Reflection loops, 24/7 cloud deployment, multi-agent coordination |
+| **Bronze** | ✅ **Complete** | Vault monitoring, dashboard updates, agent skills API |
+| **Silver** | ✅ **MVP** | AI priority analysis, task categorization, Gmail integration |
+| **Gold** | ⏳ **Coming Soon** | Multi-step execution, external APIs, task decomposition |
+| **Platinum** | ⏳ **Future** | Reflection loops, 24/7 cloud deployment, multi-agent coordination |
 
-**Current Release**: Bronze Tier v0.1.0 (Production Ready)
+**Current Release**: Silver Tier MVP (AI-Powered)
 
 ---
 
 ## 🔧 Requirements
 
+### Bronze (All Tiers)
 - **Python**: 3.11 or higher
 - **Obsidian**: 1.5+ (tested with 1.11.7)
 - **OS**: WSL Ubuntu 22.04+ (primary), macOS 13+, Windows 11 (secondary)
 - **Disk Space**: 1GB for vault with 1000 markdown files
 - **RAM**: 8GB minimum (watcher uses <100MB)
+
+### Silver (Additional)
+- **Claude API Key** — from [console.anthropic.com](https://console.anthropic.com/) (free tier available)
+- **anthropic** Python SDK ≥ 0.18.0
+- **Google Cloud Project** — for Gmail watcher (optional)
+- **Node.js 18+** — for PM2 process manager (optional)
 
 ---
 
