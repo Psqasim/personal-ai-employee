@@ -34,17 +34,25 @@
 
 ### Screenshots
 
-**Email Automation:**
-![Email Sent](public/mcptest.png)
-*Real email sent via SMTP MCP server and delivered to Gmail*
+**Email Automation Test:**
+![Email Sent Successfully](public/emailTest.png)
+*Real email sent via SMTP MCP - delivered to muhammadqasim0326@gmail.com*
 
-**Odoo Invoice Creation:**
-![Odoo Draft Invoice](public/odootest.png)
-*Draft invoice created in Odoo (draft-only mode for financial safety)*
+**MCP Servers Status:**
+![All 5 MCP Servers Operational](public/mcptest.png)
+*✅ All MCP servers responding: Email, LinkedIn, WhatsApp, Twitter, Odoo*
 
-**MCP Servers Operational:**
-![MCP Server Status](public/obsidian_dashboard.png)
-*All 5 MCP servers responding to JSON-RPC 2.0 requests*
+**Odoo Accounting Integration:**
+![Draft Invoice Created](public/odootest.png)
+*Draft invoice INV/2026/00001 created (100.00 PKR) - draft-only safety mode*
+
+**Obsidian Dashboard:**
+![Task Dashboard](public/obsidianDasbboard.png)
+*Enhanced dashboard with emoji indicators and real-time task tracking*
+
+**Approval Workflow:**
+![Email Approval Process](public/obsidanApprovalEmail.png)
+*Human-in-the-loop approval system - email draft pending approval*
 
 **Test Results:**
 - ✅ 37/38 automated tests passing (97% coverage)
