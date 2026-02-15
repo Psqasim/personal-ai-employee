@@ -1,0 +1,31 @@
+{
+  "name": "instagram-mcp",
+  "version": "1.0.0",
+  "description": "Instagram Basic Display API MCP Server for creating posts and stories",
+  "api_version": "v18.0",
+  "required_env": [
+    "INSTAGRAM_ACCESS_TOKEN",
+    "INSTAGRAM_USER_ID"
+  ],
+  "optional_env": [
+    "INSTAGRAM_APP_ID",
+    "INSTAGRAM_APP_SECRET"
+  ],
+  "permissions_required": [
+    "instagram_basic",
+    "instagram_content_publish",
+    "pages_read_engagement"
+  ],
+  "setup_instructions": "See docs/gold/instagram-setup.md for detailed setup guide",
+  "rate_limits": {
+    "posts_per_day": 25,
+    "stories_per_day": 100,
+    "backoff_minutes": 60
+  },
+  "image_requirements": {
+    "formats": ["JPEG", "PNG"],
+    "min_width": 320,
+    "max_width": 1440,
+    "aspect_ratio": "4:5 to 1.91:1"
+  }
+}

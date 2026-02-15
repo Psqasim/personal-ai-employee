@@ -90,6 +90,22 @@ vault/Approved/
 gmail_token.json
 whatsapp_session/
 
+# Gold Tier - Execution artifacts (never commit)
+vault/In_Progress/
+vault/Rejected/
+vault/Briefings/
+vault/Logs/Human_Approvals/
+vault/Logs/Plan_Execution/
+vault/Logs/Error_Recovery/
+*.lock
+*.lock.*
+.whatsapp_session/
+mcp_servers/*/session/
+
 # PM2 process manager
 .pm2/
 ecosystem.config.js.bak
+
+# Claude Code MCP config (contains credentials)
+.claude/mcp_config.json
+.claude/mcp_config.json

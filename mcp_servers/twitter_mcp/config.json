@@ -1,0 +1,29 @@
+{
+  "name": "twitter-mcp",
+  "version": "1.0.0",
+  "description": "Twitter API v2 MCP Server for creating tweets and reading mentions",
+  "api_version": "v2",
+  "required_env": [
+    "TWITTER_BEARER_TOKEN"
+  ],
+  "optional_env": [
+    "TWITTER_API_KEY",
+    "TWITTER_API_SECRET",
+    "TWITTER_ACCESS_TOKEN",
+    "TWITTER_ACCESS_SECRET"
+  ],
+  "permissions_required": [
+    "tweet.read",
+    "tweet.write",
+    "users.read"
+  ],
+  "access_level_required": "Elevated",
+  "setup_instructions": "See docs/gold/twitter-setup.md for detailed setup guide",
+  "rate_limits": {
+    "tweets_per_day": 2400,
+    "tweets_per_15min": 50,
+    "reads_per_15min": 180,
+    "backoff_minutes": 15
+  },
+  "character_limit": 280
+}

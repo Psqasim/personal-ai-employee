@@ -1,0 +1,60 @@
+{
+  "mcpServers": {
+    "email-mcp": {
+      "command": "python3",
+      "args": [
+        "/path/to/personal-ai-employee/mcp_servers/email_mcp/server.py"
+      ],
+      "env": {
+        "SMTP_HOST": "smtp.gmail.com",
+        "SMTP_PORT": "465",
+        "SMTP_USER": "your-email@gmail.com",
+        "SMTP_PASSWORD": "your-16-char-app-password",
+        "SMTP_USE_SSL": "true"
+      }
+    },
+    "linkedin-mcp": {
+      "command": "python3",
+      "args": [
+        "/path/to/personal-ai-employee/mcp_servers/linkedin_mcp/server.py"
+      ],
+      "env": {
+        "LINKEDIN_ACCESS_TOKEN": "your-linkedin-oauth2-access-token"
+      }
+    },
+    "whatsapp-mcp": {
+      "command": "python3",
+      "args": [
+        "/path/to/personal-ai-employee/mcp_servers/whatsapp_mcp/server.py"
+      ],
+      "env": {
+        "WHATSAPP_SESSION_PATH": "/home/your-username/.whatsapp_session"
+      }
+    },
+    "twitter-mcp": {
+      "command": "python3",
+      "args": [
+        "/path/to/personal-ai-employee/mcp_servers/twitter_mcp/server.py"
+      ],
+      "env": {
+        "TWITTER_API_KEY": "your-twitter-api-key",
+        "TWITTER_API_SECRET": "your-twitter-api-secret",
+        "TWITTER_ACCESS_TOKEN": "your-twitter-access-token",
+        "TWITTER_ACCESS_TOKEN_SECRET": "your-twitter-access-token-secret",
+        "TWITTER_BEARER_TOKEN": "your-twitter-bearer-token"
+      }
+    },
+    "odoo-mcp": {
+      "command": "python3",
+      "args": [
+        "/path/to/personal-ai-employee/mcp_servers/odoo_mcp/server.py"
+      ],
+      "env": {
+        "ODOO_URL": "https://your-instance.odoo.com",
+        "ODOO_DB": "your-database-name",
+        "ODOO_USER": "your-email@example.com",
+        "ODOO_PASSWORD": "your-odoo-password"
+      }
+    }
+  }
+}

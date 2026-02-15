@@ -1,0 +1,115 @@
+{
+  "server_name": "odoo-mcp",
+  "description": "Odoo MCP Server for draft accounting entries",
+  "version": "1.0.0",
+  "author": "Personal AI Employee (Gold Tier)",
+  "created": "2026-02-14",
+  "task": "T057 [US7] Implement odoo_mcp/config.json",
+  "environment_variables": {
+    "ODOO_URL": {
+      "description": "Odoo instance URL (e.g., https://your-company.odoo.com)",
+      "required": true,
+      "example": "https://demo.odoo.com"
+    },
+    "ODOO_DB": {
+      "description": "Odoo database name",
+      "required": true,
+      "example": "production"
+    },
+    "ODOO_USER": {
+      "description": "Odoo user email/login",
+      "required": true,
+      "example": "admin@example.com"
+    },
+    "ODOO_PASSWORD": {
+      "description": "Odoo user password or API key",
+      "required": true,
+      "example": "your-secure-password",
+      "security_note": "Never commit this file with real credentials! Use .env instead"
+    }
+  },
+  "tools": [
+    {
+      "name": "create_draft_invoice",
+      "description": "Create draft invoice in Odoo (status=draft, never auto-posted)",
+      "parameters": {
+        "customer": {
+          "type": "string",
+          "required": true,
+          "description": "Customer name or ID"
+        },
+        "amount": {
+          "type": "number",
+          "required": true,
+          "description": "Invoice amount (float)"
+        },
+        "description": {
+          "type": "string",
+          "required": true,
+          "description": "Invoice description/reference"
+        },
+        "invoice_date": {
+          "type": "string",
+          "required": false,
+          "description": "Invoice date (YYYY-MM-DD), defaults to today"
+        }
+      },
+      "returns": {
+        "odoo_record_id": "Odoo record ID (int)",
+        "invoice_number": "Auto-generated invoice number (str)",
+        "status": "Invoice status (always 'draft')",
+        "created_at": "Creation timestamp (ISO format)"
+      }
+    },
+    {
+      "name": "create_draft_expense",
+      "description": "Create draft expense entry in Odoo (status=draft, never auto-posted)",
+      "parameters": {
+        "vendor": {
+          "type": "string",
+          "required": true,
+          "description": "Vendor/supplier name or ID"
+        },
+        "amount": {
+          "type": "number",
+          "required": true,
+          "description": "Expense amount (float)"
+        },
+        "description": {
+          "type": "string",
+          "required": true,
+          "description": "Expense description/reference"
+        },
+        "expense_date": {
+          "type": "string",
+          "required": false,
+          "description": "Expense date (YYYY-MM-DD), defaults to today"
+        }
+      },
+      "returns": {
+        "odoo_record_id": "Odoo record ID (int)",
+        "expense_number": "Auto-generated expense number (str)",
+        "status": "Expense status (always 'draft')",
+        "created_at": "Creation timestamp (ISO format)"
+      }
+    }
+  ],
+  "safety_features": {
+    "draft_only": "All entries created with status='draft', never auto-confirmed or auto-posted",
+    "human_approval": "All Odoo actions require human approval via vault/Approved/Odoo/ file-move workflow",
+    "audit_logging": "All Odoo MCP invocations logged to vault/Logs/MCP_Actions/",
+    "error_recovery": "Failed actions logged to vault/Logs/Error_Recovery/ with retry instructions"
+  },
+  "setup_instructions": {
+    "1": "Install Odoo 19+ (Community or Enterprise)",
+    "2": "Create API user with Accounting/Invoicing permissions",
+    "3": "Set environment variables: ODOO_URL, ODOO_DB, ODOO_USER, ODOO_PASSWORD",
+    "4": "Test connection: echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}' | python server.py",
+    "5": "Add to ~/.config/claude-code/mcp.json (see docs/gold/mcp-setup.md)"
+  },
+  "references": {
+    "odoo_api_docs": "https://www.odoo.com/documentation/19.0/developer/reference/external_api.html",
+    "account_move_model": "https://www.odoo.com/documentation/19.0/developer/reference/backend/orm.html#odoo.models.Model",
+    "xml_rpc_protocol": "https://www.odoo.com/documentation/19.0/developer/reference/external_api.html#xml-rpc"
+  }
+}

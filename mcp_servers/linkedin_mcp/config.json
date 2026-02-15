@@ -1,0 +1,25 @@
+{
+  "_comment": "LinkedIn MCP Server Configuration Template",
+  "_note": "Access token and author URN should be set via environment variables",
+
+  "api": {
+    "base_url": "https://api.linkedin.com/v2",
+    "timeout_seconds": 30
+  },
+
+  "oauth": {
+    "access_token": "your-oauth2-access-token",
+    "author_urn": "urn:li:person:your-linkedin-id",
+    "token_expiry_days": 60
+  },
+
+  "post_limits": {
+    "max_characters": 3000,
+    "max_posts_per_day": 5
+  },
+
+  "rate_limiting": {
+    "retry_after_minutes": 60,
+    "max_retries": 3
+  }
+}
