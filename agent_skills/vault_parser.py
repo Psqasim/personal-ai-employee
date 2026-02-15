@@ -1,0 +1,358 @@
+"""
+Vault Parser - Obsidian Markdown + YAML Frontmatter Parsing
+
+This module provides parsing utilities for Obsidian vault files with YAML frontmatter.
+Supports all Bronze/Silver/Gold tier entity types:
+- Task files (EMAIL_*.md, WHATSAPP_*.md, etc.)
+- Draft files (EmailDraft, WhatsAppDraft, LinkedInDraft)
+- Plan files (Plan.md with steps)
+- Execution state files (state.md in In_Progress/)
+
+Author: Personal AI Employee (Gold Tier)
+Created: 2026-02-14
+"""
+
+import os
+from pathlib import Path
+from typing import Dict, Any, Optional, List
+from dataclasses import dataclass, field
+from datetime import datetime
+import yaml
+
+
+# ====== Data Classes for Parsed Entities ======
+
+@dataclass
+class EmailDraft:
+    """Parsed EmailDraft entity from vault/Pending_Approval/Email/"""
+    draft_id: str
+    original_email_id: str
+    to: str
+    subject: str
+    draft_body: str
+    status: str
+    generated_at: datetime
+    sent_at: Optional[datetime] = None
+    action: str = "send_email"
+    mcp_server: str = "email-mcp"
+    file_path: str = ""
+
+
+@dataclass
+class WhatsAppDraft:
+    """Parsed WhatsAppDraft entity from vault/Pending_Approval/WhatsApp/"""
+    draft_id: str
+    original_message_id: str
+    to: str
+    chat_id: str
+    draft_body: str
+    status: str
+    generated_at: datetime
+    sent_at: Optional[datetime] = None
+    keywords_matched: List[str] = field(default_factory=list)
+    action: str = "send_message"
+    mcp_server: str = "whatsapp-mcp"
+    file_path: str = ""
+
+
+@dataclass
+class LinkedInDraft:
+    """Parsed LinkedInDraft entity from vault/Pending_Approval/LinkedIn/"""
+    draft_id: str
+    scheduled_date: str
+    business_goal_reference: str
+    post_content: str
+    character_count: int
+    status: str
+    generated_at: datetime
+    posted_at: Optional[datetime] = None
+    action: str = "create_post"
+    mcp_server: str = "linkedin-mcp"
+    file_path: str = ""
+
+
+@dataclass
+class PlanStep:
+    """Parsed PlanStep from Plan YAML"""
+    step_num: int
+    description: str
+    action_type: str
+    action_params: Dict[str, Any]
+    dependencies: List[int] = field(default_factory=list)
+    status: str = "pending"
+    mcp_action_log_id: Optional[str] = None
+    retry_count: int = 0
+
+
+@dataclass
+class Plan:
+    """Parsed Plan entity from vault/Plans/"""
+    plan_id: str
+    objective: str
+    steps: List[PlanStep]
+    total_steps: int
+    completed_steps: int
+    status: str
+    approval_required: bool = True
+    estimated_time: str = ""
+    approval_file_path: str = ""
+    iteration_count: int = 0
+    created_at: Optional[datetime] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    file_path: str = ""
+
+
+@dataclass
+class ExecutionState:
+    """Parsed ExecutionState from vault/In_Progress/{plan_id}/state.md"""
+    plan_id: str
+    current_step: int
+    iterations_remaining: int
+    last_action: str = ""
+    last_action_timestamp: Optional[datetime] = None
+    loop_start_time: Optional[datetime] = None
+    file_path: str = ""
+
+
+# ====== Parsing Functions ======
+
+def parse_frontmatter(file_path: str) -> tuple[Dict[str, Any], str]:
+    """
+    Parse YAML frontmatter and body from Obsidian markdown file.
+
+    Args:
+        file_path: Absolute path to markdown file
+
+    Returns:
+        Tuple of (frontmatter_dict, body_content)
+
+    Raises:
+        FileNotFoundError: If file doesn't exist
+        yaml.YAMLError: If frontmatter is invalid YAML
+    """
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"File not found: {file_path}")
+
+    with open(file_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    # Check for frontmatter delimiters
+    if not content.startswith('---\n'):
+        return {}, content
+
+    # Find closing delimiter
+    end_index = content.find('\n---\n', 4)
+    if end_index == -1:
+        # Try alternate delimiter format (---\r\n on Windows)
+        end_index = content.find('\r\n---\r\n', 4)
+        if end_index == -1:
+            return {}, content
+
+    # Extract frontmatter and body
+    frontmatter_text = content[4:end_index]
+    body = content[end_index + 5:].strip()
+
+    # Parse YAML
+    try:
+        frontmatter = yaml.safe_load(frontmatter_text)
+        if frontmatter is None:
+            frontmatter = {}
+    except yaml.YAMLError as e:
+        raise yaml.YAMLError(f"Invalid YAML frontmatter in {file_path}: {e}")
+
+    return frontmatter, body
+
+
+def parse_draft_file(file_path: str, draft_type: str = "email") -> Any:
+    """
+    Parse draft file (EmailDraft, WhatsAppDraft, or LinkedInDraft).
+
+    Args:
+        file_path: Absolute path to draft file
+        draft_type: Type of draft ("email", "whatsapp", "linkedin")
+
+    Returns:
+        Parsed draft object (EmailDraft, WhatsAppDraft, or LinkedInDraft)
+
+    Raises:
+        ValueError: If draft_type is invalid or required fields missing
+    """
+    frontmatter, body = parse_frontmatter(file_path)
+
+    # Helper to parse datetime fields
+    def parse_datetime(value):
+        if value is None or value == "null":
+            return None
+        if isinstance(value, datetime):
+            return value
+        return datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+
+    if draft_type == "email":
+        return EmailDraft(
+            draft_id=frontmatter.get("draft_id", ""),
+            original_email_id=frontmatter.get("original_email_id", ""),
+            to=frontmatter.get("to", ""),
+            subject=frontmatter.get("subject", ""),
+            draft_body=frontmatter.get("draft_body", ""),
+            status=frontmatter.get("status", "pending_approval"),
+            generated_at=parse_datetime(frontmatter.get("generated_at")),
+            sent_at=parse_datetime(frontmatter.get("sent_at")),
+            action=frontmatter.get("action", "send_email"),
+            mcp_server=frontmatter.get("mcp_server", "email-mcp"),
+            file_path=file_path
+        )
+
+    elif draft_type == "whatsapp":
+        return WhatsAppDraft(
+            draft_id=frontmatter.get("draft_id", ""),
+            original_message_id=frontmatter.get("original_message_id", ""),
+            to=frontmatter.get("to", ""),
+            chat_id=frontmatter.get("chat_id", ""),
+            draft_body=frontmatter.get("draft_body", ""),
+            status=frontmatter.get("status", "pending_approval"),
+            generated_at=parse_datetime(frontmatter.get("generated_at")),
+            sent_at=parse_datetime(frontmatter.get("sent_at")),
+            keywords_matched=frontmatter.get("keywords_matched", []),
+            action=frontmatter.get("action", "send_message"),
+            mcp_server=frontmatter.get("mcp_server", "whatsapp-mcp"),
+            file_path=file_path
+        )
+
+    elif draft_type == "linkedin":
+        return LinkedInDraft(
+            draft_id=frontmatter.get("draft_id", ""),
+            scheduled_date=frontmatter.get("scheduled_date", ""),
+            business_goal_reference=frontmatter.get("business_goal_reference", ""),
+            post_content=frontmatter.get("post_content", ""),
+            character_count=frontmatter.get("character_count", 0),
+            status=frontmatter.get("status", "pending_approval"),
+            generated_at=parse_datetime(frontmatter.get("generated_at")),
+            posted_at=parse_datetime(frontmatter.get("posted_at")),
+            action=frontmatter.get("action", "create_post"),
+            mcp_server=frontmatter.get("mcp_server", "linkedin-mcp"),
+            file_path=file_path
+        )
+
+    else:
+        raise ValueError(f"Invalid draft_type: {draft_type}. Must be 'email', 'whatsapp', or 'linkedin'")
+
+
+def parse_plan_file(file_path: str) -> Plan:
+    """
+    Parse Plan file from vault/Plans/.
+
+    Args:
+        file_path: Absolute path to Plan file
+
+    Returns:
+        Parsed Plan object
+
+    Raises:
+        ValueError: If required fields missing or invalid structure
+    """
+    frontmatter, body = parse_frontmatter(file_path)
+
+    # Helper to parse datetime
+    def parse_datetime(value):
+        if value is None or value == "null":
+            return None
+        if isinstance(value, datetime):
+            return value
+        return datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+
+    # Parse steps array
+    steps_data = frontmatter.get("steps", [])
+    steps = []
+    for step_data in steps_data:
+        step = PlanStep(
+            step_num=step_data.get("step_num", 0),
+            description=step_data.get("description", ""),
+            action_type=step_data.get("action_type", ""),
+            action_params=step_data.get("action_params", {}),
+            dependencies=step_data.get("dependencies", []),
+            status=step_data.get("status", "pending"),
+            mcp_action_log_id=step_data.get("mcp_action_log_id"),
+            retry_count=step_data.get("retry_count", 0)
+        )
+        steps.append(step)
+
+    return Plan(
+        plan_id=frontmatter.get("plan_id", ""),
+        objective=frontmatter.get("objective", ""),
+        steps=steps,
+        total_steps=frontmatter.get("total_steps", len(steps)),
+        completed_steps=frontmatter.get("completed_steps", 0),
+        status=frontmatter.get("status", "awaiting_approval"),
+        approval_required=frontmatter.get("approval_required", True),
+        estimated_time=frontmatter.get("estimated_time", ""),
+        approval_file_path=frontmatter.get("approval_file_path", ""),
+        iteration_count=frontmatter.get("iteration_count", 0),
+        created_at=parse_datetime(frontmatter.get("created_at")),
+        started_at=parse_datetime(frontmatter.get("started_at")),
+        completed_at=parse_datetime(frontmatter.get("completed_at")),
+        file_path=file_path
+    )
+
+
+def parse_execution_state(file_path: str) -> ExecutionState:
+    """
+    Parse ExecutionState from vault/In_Progress/{plan_id}/state.md.
+
+    Args:
+        file_path: Absolute path to state.md file
+
+    Returns:
+        Parsed ExecutionState object
+    """
+    frontmatter, body = parse_frontmatter(file_path)
+
+    def parse_datetime(value):
+        if value is None or value == "null":
+            return None
+        if isinstance(value, datetime):
+            return value
+        return datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+
+    return ExecutionState(
+        plan_id=frontmatter.get("plan_id", ""),
+        current_step=frontmatter.get("current_step", 1),
+        iterations_remaining=frontmatter.get("iterations_remaining", 10),
+        last_action=frontmatter.get("last_action", ""),
+        last_action_timestamp=parse_datetime(frontmatter.get("last_action_timestamp")),
+        loop_start_time=parse_datetime(frontmatter.get("loop_start_time")),
+        file_path=file_path
+    )
+
+
+def detect_draft_type(file_path: str) -> Optional[str]:
+    """
+    Auto-detect draft type from file path.
+
+    Args:
+        file_path: Path to draft file
+
+    Returns:
+        Draft type ("email", "whatsapp", "linkedin") or None if not a draft
+    """
+    path_str = str(file_path).lower()
+
+    if "/email/" in path_str or "email_draft" in path_str:
+        return "email"
+    elif "/whatsapp/" in path_str or "whatsapp_draft" in path_str:
+        return "whatsapp"
+    elif "/linkedin/" in path_str or "linkedin_post" in path_str:
+        return "linkedin"
+
+    return None
+
+
+# Example usage
+if __name__ == "__main__":
+    # Example: Parse email draft
+    email_draft = parse_draft_file("vault/Pending_Approval/Email/EMAIL_DRAFT_001.md", "email")
+    print(f"Email draft: {email_draft.subject}")
+
+    # Example: Parse plan
+    plan = parse_plan_file("vault/Plans/PLAN_onboarding_2026-02-14.md")
+    print(f"Plan: {plan.objective}, Steps: {plan.total_steps}")

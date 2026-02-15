@@ -1,0 +1,27 @@
+# Gold Tier Dependencies
+# Inherits all Silver tier dependencies from requirements-silver.txt
+
+# ====== INHERITED FROM SILVER ======
+# anthropic>=0.18.0          # Claude API for AI analysis
+# playwright>=1.40.0         # WhatsApp Web automation
+# watchdog>=3.0.0            # File system monitoring
+# pyyaml>=6.0                # YAML frontmatter parsing
+# google-api-python-client>=2.80.0  # Gmail API
+# aiohttp>=3.9.0             # Async HTTP client
+
+# ====== GOLD TIER ADDITIONS ======
+
+# Environment configuration
+python-dotenv>=1.0.0         # Load .env file for configuration
+
+# Task scheduling and cron
+schedule>=1.2.0              # CEO Briefing weekly scheduling (Sunday 23:00)
+
+# Concurrency and file locking
+filelock>=3.12.0             # Vault write conflict resolution (race condition handling)
+
+# HTTP and API clients
+requests>=2.31.0             # LinkedIn API v2 calls (REST)
+
+# Note: smtplib and imaplib are Python stdlib (no install needed)
+# Note: Playwright browsers must be installed separately: playwright install chromium

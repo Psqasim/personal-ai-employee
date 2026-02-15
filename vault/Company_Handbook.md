@@ -1,65 +1,19 @@
----
-version: 1.0.0
-tier: bronze
-last_updated: 2026-02-10
-polling_interval: 30
----
+# Company Handbook
 
-# Company Handbook - Bronze Tier
+## Company Information
+**Name**: Personal AI Solutions
+**Mission**: Empower professionals with AI automation
 
-## 1. File Naming Convention
+## Business Goals
 
-All task files in Inbox/ should follow this format:
-- Format: `YYYY-MM-DD-brief-description.md`
-- Example: `2026-02-10-review-client-proposal.md`
-- Hyphens for word separation (no spaces)
-- Dates in ISO 8601 format (YYYY-MM-DD)
+We help busy professionals automate repetitive tasks through AI-powered assistants. Our focus is on:
 
-## 2. Folder Usage Guidelines
+1. **Time Savings**: Reduce daily admin work from 5 hours to 30 minutes
+2. **Quality**: Maintain professional standards in all automated communications
+3. **Transparency**: Human approval for all outbound actions
+4. **Thought Leadership**: Share insights on AI automation and productivity
 
-- **Inbox/**: Drop all new tasks here. Watcher monitors this folder.
-- **Needs_Action/**: (Manual move in Bronze) Tasks requiring immediate attention.
-- **Done/**: (Manual move in Bronze) Completed tasks for archival.
-- **Plans/**: Reserved for future use (Silver tier and above).
-- **Logs/**: System-generated logs. Do not manually edit.
-
-## 3. Forbidden Operations (Bronze Tier)
-
-The Bronze tier AI Employee is **monitoring only**. It will:
-- ✅ Detect new files in Inbox/
-- ✅ Update Dashboard.md automatically
-- ✅ Log events to vault/Logs/
-
-It will **NOT**:
-- ❌ Delete any files
-- ❌ Move files between folders
-- ❌ Modify file contents
-- ❌ Execute code from vault files
-- ❌ Make network requests
-
-## 4. Escalation Rules
-
-The watcher logs warnings for:
-- Obsidian file locks (will retry automatically)
-- Dashboard.md corruption (will restore from backup)
-- Vault exceeding 1000 files (performance warning)
-- Invalid file encoding (UTF-8 required)
-
-**Human intervention required for**:
-- Watcher process crashes (check vault/Logs/ for errors)
-- Persistent file lock conflicts (close Obsidian temporarily)
-- Backup restoration failures (manual recovery from .bak files)
-
-## 5. Bronze Tier Limitations
-
-This is a **foundation tier**. The AI Employee:
-- Operates 100% offline (no AI analysis, no external APIs)
-- Requires manual file movement (no autonomous actions)
-- Defaults all tasks to "Medium" priority (no smart prioritization)
-- Polls every 30 seconds (not real-time monitoring)
-- Supports up to 1000 files (performance limit)
-
-**Upgrade to Silver Tier for**:
-- AI-powered priority analysis
-- Automatic file movement with approval workflow
-- Integration with email/WhatsApp
+## Values
+- Efficiency through automation
+- Human oversight and control
+- Continuous learning and improvement

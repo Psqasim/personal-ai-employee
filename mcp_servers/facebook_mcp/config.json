@@ -1,0 +1,23 @@
+{
+  "name": "facebook-mcp",
+  "version": "1.0.0",
+  "description": "Facebook Graph API MCP Server for creating posts and reading feed",
+  "api_version": "v18.0",
+  "required_env": [
+    "FACEBOOK_ACCESS_TOKEN",
+    "FACEBOOK_PAGE_ID"
+  ],
+  "optional_env": [
+    "FACEBOOK_APP_ID",
+    "FACEBOOK_APP_SECRET"
+  ],
+  "permissions_required": [
+    "pages_manage_posts",
+    "pages_read_engagement"
+  ],
+  "setup_instructions": "See docs/gold/facebook-setup.md for detailed setup guide",
+  "rate_limits": {
+    "posts_per_hour": 100,
+    "backoff_minutes": 60
+  }
+}

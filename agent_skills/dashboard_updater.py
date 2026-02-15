@@ -16,6 +16,73 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 
+def _get_gold_stats(vault_path: Path) -> Dict[str, any]:
+    """
+    Calculate Gold tier statistics from vault.
+
+    Args:
+        vault_path: Path to vault root directory
+
+    Returns:
+        Dict with Gold tier stats:
+        - api_cost_today: Float (USD)
+        - active_plans: Int
+        - mcp_email/whatsapp/linkedin: Status str ("✓ Active" or "✗ Inactive")
+        - pending_email/whatsapp/linkedin/plans: Int (count of pending approvals)
+    """
+    import os
+    from datetime import date
+
+    stats = {
+        "api_cost_today": 0.0,
+        "active_plans": 0,
+        "mcp_email": "✗ Inactive",
+        "mcp_whatsapp": "✗ Inactive",
+        "mcp_linkedin": "✗ Inactive",
+        "pending_email": 0,
+        "pending_whatsapp": 0,
+        "pending_linkedin": 0,
+        "pending_plans": 0,
+    }
+
+    # Count pending approvals
+    pending_approval = vault_path / "Pending_Approval"
+    if pending_approval.exists():
+        stats["pending_email"] = len(list((pending_approval / "Email").glob("*.md")))
+        stats["pending_whatsapp"] = len(list((pending_approval / "WhatsApp").glob("*.md")))
+        stats["pending_linkedin"] = len(list((pending_approval / "LinkedIn").glob("*.md")))
+        stats["pending_plans"] = len(list((pending_approval / "Plans").glob("*.md")))
+
+    # Count active plans
+    in_progress = vault_path / "In_Progress"
+    if in_progress.exists():
+        stats["active_plans"] = len([d for d in in_progress.iterdir() if d.is_dir()])
+
+    # Calculate today's API cost from vault/Logs/API_Usage/
+    today_str = date.today().isoformat()
+    api_usage_log = vault_path / "Logs" / "API_Usage" / f"{today_str}.md"
+    if api_usage_log.exists():
+        # Simple parsing: look for cost entries in YAML frontmatter
+        try:
+            content = api_usage_log.read_text(encoding="utf-8")
+            # Extract cost_usd values from log entries (simplified)
+            import re
+            costs = re.findall(r"cost_usd:\s*([\d.]+)", content)
+            stats["api_cost_today"] = sum(float(c) for c in costs)
+        except Exception:
+            pass
+
+    # Check MCP server status (simplified: check if env vars are set)
+    if os.getenv("SMTP_HOST") and os.getenv("SMTP_USER"):
+        stats["mcp_email"] = "✓ Active"
+    if os.getenv("WHATSAPP_SESSION_PATH"):
+        stats["mcp_whatsapp"] = "✓ Active"
+    if os.getenv("LINKEDIN_ACCESS_TOKEN"):
+        stats["mcp_linkedin"] = "✓ Active"
+
+    return stats
+
+
 def parse_dashboard(dashboard_path: Path) -> List[Dict[str, str]]:
     """Parse Dashboard.md and extract task table rows.
 
@@ -67,11 +134,12 @@ def parse_dashboard(dashboard_path: Path) -> List[Dict[str, str]]:
     return tasks
 
 
-def render_dashboard(tasks: List[Dict[str, str]]) -> str:
+def render_dashboard(tasks: List[Dict[str, str]], vault_path: Optional[Path] = None) -> str:
     """Generate Dashboard.md markdown from task list.
 
     Args:
         tasks: List of task dictionaries
+        vault_path: Optional path to vault root (for Gold tier stats)
 
     Returns:
         Complete Dashboard.md content as string
@@ -79,6 +147,8 @@ def render_dashboard(tasks: List[Dict[str, str]]) -> str:
     import os
 
     ai_enabled = os.getenv("ENABLE_AI_ANALYSIS", "false").lower() == "true"
+    tier = os.getenv("TIER", "bronze").lower()
+    plan_execution_enabled = os.getenv("ENABLE_PLAN_EXECUTION", "false").lower() == "true"
 
     # Sort tasks by priority order (Urgent → High → Medium → Low), then by date_added
     priority_order = {"Urgent": 0, "High": 1, "Medium": 2, "Low": 3}
@@ -101,25 +171,38 @@ def render_dashboard(tasks: List[Dict[str, str]]) -> str:
         "urgent": sum(1 for t in sorted_tasks if t.get("category", "") == "Urgent"),
     }
 
-    # Render markdown
+    # Render markdown with enhanced UI
     lines = [
-        "# Personal AI Employee Dashboard",
+        "# 🤖 Personal AI Employee Dashboard",
         "",
-        "## Task Overview",
+        f"**Tier:** {tier.upper()} {'🥉' if tier == 'bronze' else '🥈' if tier == 'silver' else '🥇'}",
+        f"**Status:** {'🟢 Active' if plan_execution_enabled else '🟡 Monitoring'}",
+        "",
+        "---",
+        "",
+        "## 📋 Task Overview",
+        "",
     ]
 
     # Silver tier: include Category column when AI is enabled
     if ai_enabled:
         lines.extend([
-            "| Filename | Date Added | Status | Priority | Category |",
-            "|----------|-----------|--------|----------|----------|",
+            "| Filename | Date | Status | Priority | Category |",
+            "|----------|------|--------|----------|----------|",
         ])
         for task in sorted_tasks:
             filename_link = f"[[{task['filename']}]]"
             category = task.get("category", "Uncategorized")
+
+            # Add emoji indicators
+            priority = task.get('priority', 'Medium')
+            priority_icon = {'Urgent': '🔴', 'High': '🟠', 'Medium': '🟡', 'Low': '🟢'}.get(priority, '⚪')
+            status = task.get('status', 'Inbox')
+            status_icon = {'Inbox': '📥', 'Needs Action': '⚠️', 'Done': '✅', 'In_Progress': '⏳'}.get(status.replace(' ', '_'), '📌')
+
             lines.append(
-                f"| {filename_link} | {task['date_added']} | {task['status']} "
-                f"| {task['priority']} | {category} |"
+                f"| {filename_link} | {task['date_added']} | {status_icon} {task['status']} "
+                f"| {priority_icon} {priority} | {category} |"
             )
     else:
         # Bronze format (backward compatible)
@@ -129,28 +212,70 @@ def render_dashboard(tasks: List[Dict[str, str]]) -> str:
         ])
         for task in sorted_tasks:
             filename_link = f"[[{task['filename']}]]"
+            priority_icon = {'Urgent': '🔴', 'High': '🟠', 'Medium': '🟡', 'Low': '🟢'}.get(task.get('priority', 'Medium'), '⚪')
+            status_icon = {'Inbox': '📥', 'Needs Action': '⚠️', 'Done': '✅'}.get(task.get('status', 'Inbox'), '📌')
             lines.append(
-                f"| {filename_link} | {task['date_added']} | {task['status']} | {task['priority']} |"
+                f"| {filename_link} | {task['date_added']} | {status_icon} {task['status']} | {priority_icon} {task['priority']} |"
             )
 
-    # Add statistics section
+    # Add statistics section with visual progress
+    total = stats['total'] if stats['total'] > 0 else 1  # Avoid division by zero
+    inbox_pct = int((stats['inbox'] / total) * 100)
+    needs_action_pct = int((stats['needs_action'] / total) * 100)
+    done_pct = int((stats['done'] / total) * 100)
+
     lines.extend([
         "",
-        "## Statistics",
-        f"- **Total Tasks**: {stats['total']}",
-        f"- **Inbox**: {stats['inbox']}",
-        f"- **Needs Action**: {stats['needs_action']}",
-        f"- **Done**: {stats['done']}",
+        "---",
+        "",
+        "## 📊 Statistics",
+        "",
+        f"### Task Status",
+        f"- 📥 **Inbox**: {stats['inbox']} ({inbox_pct}%)",
+        f"- ⚠️  **Needs Action**: {stats['needs_action']} ({needs_action_pct}%)",
+        f"- ✅ **Done**: {stats['done']} ({done_pct}%)",
+        f"- 📌 **Total Tasks**: {stats['total']}",
     ])
 
     # Silver tier category statistics
     if ai_enabled:
         lines.extend([
             "",
-            "### Category Breakdown",
-            f"- **Work Tasks**: {stats['work']}",
-            f"- **Personal Tasks**: {stats['personal']}",
-            f"- **Urgent Tasks**: {stats['urgent']}",
+            "### 🏷️ Category Breakdown",
+            f"- 💼 **Work**: {stats['work']} tasks",
+            f"- 🏠 **Personal**: {stats['personal']} tasks",
+            f"- 🚨 **Urgent**: {stats['urgent']} tasks",
+        ])
+
+    # Gold tier status section
+    if tier == "gold" and vault_path:
+        gold_stats = _get_gold_stats(vault_path)
+
+        # Calculate cost alert level
+        cost_today = gold_stats['api_cost_today']
+        cost_icon = '🟢' if cost_today < 0.10 else '🟡' if cost_today < 0.25 else '🔴'
+
+        lines.extend([
+            "",
+            "---",
+            "",
+            "## 🥇 Gold Tier Status",
+            "",
+            "### 🔧 System Status",
+            f"- 🤖 **Autonomous Mode**: {'✅ Enabled' if plan_execution_enabled else '⏸️ Monitoring Only'}",
+            f"- {cost_icon} **API Cost Today**: ${cost_today:.4f} / $0.10",
+            f"- 📋 **Active Plans**: {gold_stats['active_plans']}",
+            "",
+            "### 🔌 MCP Servers",
+            f"- 📧 **email-mcp**: {gold_stats['mcp_email']}",
+            f"- 💬 **whatsapp-mcp**: {gold_stats['mcp_whatsapp']}",
+            f"- 🔗 **linkedin-mcp**: {gold_stats['mcp_linkedin']}",
+            "",
+            "### ⏳ Pending Approvals",
+            f"- 📧 **Email Drafts**: {gold_stats['pending_email']}",
+            f"- 💬 **WhatsApp Drafts**: {gold_stats['pending_whatsapp']}",
+            f"- 🔗 **LinkedIn Posts**: {gold_stats['pending_linkedin']}",
+            f"- 📋 **Execution Plans**: {gold_stats['pending_plans']}",
         ])
 
     lines.extend([
@@ -266,7 +391,7 @@ def update_dashboard(
             })
 
         # Step 4: Render markdown
-        markdown_content = render_dashboard(existing_tasks)
+        markdown_content = render_dashboard(existing_tasks, vault_path=vault)
 
         # Step 5: Write to temp file
         temp_path.write_text(markdown_content, encoding="utf-8")
