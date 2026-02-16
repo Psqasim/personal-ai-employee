@@ -1,0 +1,394 @@
+openapi: 3.0.3
+info:
+  title: Personal AI Employee - Dashboard API
+  description: Next.js API routes for Platinum tier dashboard (one-click approve/reject, status polling, MCP health)
+  version: 1.0.0
+  contact:
+    name: Platinum Tier Implementation
+    url: https://github.com/user/personal-ai-employee
+
+servers:
+  - url: http://localhost:3000
+    description: Local development server
+  - url: http://{local_ip}:3000
+    description: Local network access (mobile)
+    variables:
+      local_ip:
+        default: '192.168.1.100'
+        description: Local Agent machine IP on network
+
+paths:
+  /api/approve:
+    post:
+      summary: Approve a pending draft
+      description: Moves draft file from /Pending_Approval/{category}/ to /Approved/{category}/, triggering MCP execution by Local Agent
+      operationId: approveDraft
+      tags:
+        - Approvals
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - type
+                - draft_id
+                - category
+              properties:
+                type:
+                  type: string
+                  enum: [email, linkedin, whatsapp, odoo, social]
+                  description: Type of draft being approved
+                draft_id:
+                  type: string
+                  description: Unique draft identifier (e.g., EMAIL_DRAFT_12345)
+                  pattern: '^[A-Z_0-9-]+$'
+                category:
+                  type: string
+                  enum: [Email, LinkedIn, WhatsApp, Odoo, Social]
+                  description: Vault folder category (matches /Pending_Approval/ subfolder)
+            examples:
+              emailApproval:
+                value:
+                  type: email
+                  draft_id: EMAIL_DRAFT_12345
+                  category: Email
+              linkedinApproval:
+                value:
+                  type: linkedin
+                  draft_id: LINKEDIN_POST_2026-02-15
+                  category: LinkedIn
+      responses:
+        '200':
+          description: Draft approved successfully, file moved to /Approved/
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Draft EMAIL_DRAFT_12345 approved. Email will be sent within 30 seconds."
+                  file_moved:
+                    type: string
+                    description: New file path in /Approved/ folder
+                    example: "vault/Approved/Email/EMAIL_DRAFT_12345.md"
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: "2026-02-15T14:30:25Z"
+        '400':
+          description: Invalid request (missing parameters, invalid draft_id)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                success: false
+                error: "Invalid draft_id format"
+        '404':
+          description: Draft file not found in /Pending_Approval/
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                success: false
+                error: "Draft file EMAIL_DRAFT_12345.md not found in vault/Pending_Approval/Email/"
+        '500':
+          description: File move operation failed (vault write error)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/reject:
+    post:
+      summary: Reject a pending draft
+      description: Moves draft file from /Pending_Approval/{category}/ to /Rejected/, prevents MCP execution
+      operationId: rejectDraft
+      tags:
+        - Approvals
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - type
+                - draft_id
+                - category
+              properties:
+                type:
+                  type: string
+                  enum: [email, linkedin, whatsapp, odoo, social]
+                draft_id:
+                  type: string
+                  pattern: '^[A-Z_0-9-]+$'
+                category:
+                  type: string
+                  enum: [Email, LinkedIn, WhatsApp, Odoo, Social]
+                reason:
+                  type: string
+                  description: Optional rejection reason (appended to YAML frontmatter)
+                  maxLength: 200
+            examples:
+              emailRejection:
+                value:
+                  type: email
+                  draft_id: EMAIL_DRAFT_12345
+                  category: Email
+                  reason: "Tone too formal, need casual reply"
+      responses:
+        '200':
+          description: Draft rejected, file moved to /Rejected/
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Draft EMAIL_DRAFT_12345 rejected. No action taken."
+                  file_moved:
+                    type: string
+                    example: "vault/Rejected/EMAIL_DRAFT_12345.md"
+                  timestamp:
+                    type: string
+                    format: date-time
+        '404':
+          description: Draft file not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/status:
+    get:
+      summary: Poll vault status for dashboard updates
+      description: Returns pending approval counts, active plan status, recent activity. Called every 5 seconds by dashboard for real-time updates.
+      operationId: getVaultStatus
+      tags:
+        - Status
+      responses:
+        '200':
+          description: Current vault state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pending_approvals:
+                    type: object
+                    description: Count of pending drafts by category
+                    properties:
+                      email:
+                        type: integer
+                        example: 3
+                      linkedin:
+                        type: integer
+                        example: 1
+                      whatsapp:
+                        type: integer
+                        example: 0
+                      odoo:
+                        type: integer
+                        example: 1
+                      social:
+                        type: integer
+                        example: 2
+                  active_plans:
+                    type: array
+                    description: Plans currently executing
+                    items:
+                      type: object
+                      properties:
+                        plan_id:
+                          type: string
+                          example: "PLAN_onboard_client_2026-02-15"
+                        objective:
+                          type: string
+                          example: "Onboard new client - draft contract, send intro email"
+                        current_step:
+                          type: integer
+                          example: 2
+                        total_steps:
+                          type: integer
+                          example: 5
+                        status:
+                          type: string
+                          enum: [executing, completed, blocked]
+                          example: "executing"
+                  recent_activity:
+                    type: array
+                    description: Last 10 actions (MCP sends, approvals, drafts)
+                    items:
+                      type: object
+                      properties:
+                        timestamp:
+                          type: string
+                          format: date-time
+                          example: "2026-02-15T14:25:00Z"
+                        action_type:
+                          type: string
+                          example: "email_sent"
+                        description:
+                          type: string
+                          example: "Email sent to john@example.com"
+                        status:
+                          type: string
+                          enum: [success, failed]
+                          example: "success"
+                  timestamp:
+                    type: string
+                    format: date-time
+                    description: Server timestamp for cache busting
+                    example: "2026-02-15T14:30:25Z"
+        '500':
+          description: Vault read error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/health:
+    get:
+      summary: Get MCP server health status
+      description: Returns online/offline/degraded status for all configured MCP servers
+      operationId: getMCPHealth
+      tags:
+        - Health
+      responses:
+        '200':
+          description: MCP server health grid
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mcp_servers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        mcp_name:
+                          type: string
+                          example: "email-mcp"
+                        status:
+                          type: string
+                          enum: [online, offline, degraded]
+                          example: "online"
+                        last_successful_call:
+                          type: string
+                          format: date-time
+                          example: "2026-02-15T14:28:00Z"
+                        last_call_status:
+                          type: string
+                          enum: [success, error, timeout]
+                          example: "success"
+                        error_message:
+                          type: string
+                          nullable: true
+                          maxLength: 200
+                          example: null
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: "2026-02-15T14:30:25Z"
+
+  /api/auth/login:
+    post:
+      summary: Authenticate user (if NEXT_AUTH_ENABLED=true)
+      description: Validates password against DASHBOARD_PASSWORD_HASH, creates session cookie
+      operationId: login
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - password
+              properties:
+                password:
+                  type: string
+                  format: password
+                  description: Plain-text password (compared to bcrypt hash)
+      responses:
+        '200':
+          description: Login successful, session cookie set
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+                example: "session=abc123; Path=/; HttpOnly; SameSite=Strict; Max-Age=604800"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Login successful"
+        '401':
+          description: Invalid password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                success: false
+                error: "Invalid password"
+
+components:
+  schemas:
+    Error:
+      type: object
+      required:
+        - success
+        - error
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          description: Human-readable error message
+          example: "File not found in vault"
+        details:
+          type: string
+          description: Optional additional error context
+          example: "vault/Pending_Approval/Email/EMAIL_DRAFT_12345.md does not exist"
+
+  securitySchemes:
+    SessionCookie:
+      type: apiKey
+      in: cookie
+      name: session
+      description: Session cookie set by /api/auth/login (if NEXT_AUTH_ENABLED=true)
+
+security:
+  - SessionCookie: []
+
+tags:
+  - name: Approvals
+    description: One-click approve/reject workflow for pending drafts
+  - name: Status
+    description: Real-time vault state for dashboard polling
+  - name: Health
+    description: MCP server health monitoring
+  - name: Auth
+    description: Dashboard authentication (optional)

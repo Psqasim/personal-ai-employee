@@ -1,0 +1,285 @@
+notification_schema:
+  version: 1.0.0
+  description: WhatsApp notification message templates for Cloud Agent → User alerts
+  delivery_method: Playwright automation of WhatsApp Web
+  max_message_length: 500  # WhatsApp Web practical limit
+  rate_limit: 1 per minute  # Avoid spam detection
+
+templates:
+  urgent_email:
+    description: Sent when Cloud Agent detects urgent/high-priority email
+    trigger: Email in vault/Inbox/ with priority="High" OR keywords (urgent, asap, deadline)
+    max_length: 400
+    format: |
+      ⚠️ [URGENT] Email from {sender_name}
+      Subject: {subject}
+      AI drafted reply ready
+      Approve: {dashboard_url}/approvals/email/{draft_id}
+      Or check vault/Pending_Approval/Email/
+
+    variables:
+      sender_name:
+        type: string
+        max_length: 50
+        description: Email sender's name (from "From" header or Company_Handbook.md contact mapping)
+        example: "John Doe"
+      subject:
+        type: string
+        max_length: 60
+        description: Email subject line (truncated if >60 chars)
+        example: "Project deadline tomorrow"
+      dashboard_url:
+        type: string
+        format: url
+        description: Local Agent dashboard URL (http://LOCAL_IP:3000)
+        example: "http://192.168.1.100:3000"
+      draft_id:
+        type: string
+        pattern: '^EMAIL_DRAFT_[0-9]+$'
+        description: Unique draft file identifier
+        example: "EMAIL_DRAFT_12345"
+
+    example_output: |
+      ⚠️ [URGENT] Email from John Doe
+      Subject: Project deadline tomorrow
+      AI drafted reply ready
+      Approve: http://192.168.1.100:3000/approvals/email/EMAIL_DRAFT_12345
+      Or check vault/Pending_Approval/Email/
+
+  critical_error:
+    description: Sent when Cloud Agent encounters unrecoverable error (Git sync failure, vault corruption, API quota exceeded)
+    trigger: Error logged to vault/Logs/Cloud/errors.md with severity="critical"
+    max_length: 400
+    format: |
+      🚨 [ERROR] {error_type}
+      {brief_description}
+      Check logs: vault/Logs/Cloud/errors.md
+      Action: {recommended_action}
+
+    variables:
+      error_type:
+        type: string
+        max_length: 30
+        description: Error category (Git sync, vault write, API quota, MCP crash)
+        example: "Git sync failing"
+      brief_description:
+        type: string
+        max_length: 100
+        description: One-line error summary
+        example: "Cloud/Local agents out of sync for 5+ min"
+      recommended_action:
+        type: string
+        max_length: 80
+        description: Human action to resolve
+        example: "Verify Git remote accessible"
+
+    example_output: |
+      🚨 [ERROR] Git sync failing
+      Cloud/Local agents out of sync for 5+ min
+      Check logs: vault/Logs/Cloud/errors.md
+      Action: Verify Git remote accessible
+
+  approval_summary:
+    description: Sent when Local Agent comes online after being offline, summarizing pending approvals
+    trigger: Local Agent detects Git pull retrieved >3 pending approval files
+    max_length: 350
+    format: |
+      📋 Good morning! {count} items pending approval:
+      - {email_count} Email drafts
+      - {linkedin_count} LinkedIn posts
+      - {whatsapp_count} WhatsApp replies
+      - {odoo_count} Odoo drafts
+      Review: {dashboard_url}/approvals
+
+    variables:
+      count:
+        type: integer
+        min: 1
+        description: Total pending approvals across all categories
+        example: 5
+      email_count:
+        type: integer
+        min: 0
+        description: Count of files in vault/Pending_Approval/Email/
+        example: 3
+      linkedin_count:
+        type: integer
+        min: 0
+        description: Count of files in vault/Pending_Approval/LinkedIn/
+        example: 1
+      whatsapp_count:
+        type: integer
+        min: 0
+        description: Count of files in vault/Pending_Approval/WhatsApp/
+        example: 1
+      odoo_count:
+        type: integer
+        min: 0
+        description: Count of files in vault/Pending_Approval/Odoo/
+        example: 0
+      dashboard_url:
+        type: string
+        format: url
+        example: "http://192.168.1.100:3000"
+
+    example_output: |
+      📋 Good morning! 5 items pending approval:
+      - 3 Email drafts
+      - 1 LinkedIn post
+      - 1 WhatsApp reply
+      - 0 Odoo drafts
+      Review: http://192.168.1.100:3000/approvals
+
+    conditional_logic:
+      - if: email_count == 0
+        then: omit "- {email_count} Email drafts" line
+      - if: linkedin_count == 0
+        then: omit "- {linkedin_count} LinkedIn posts" line
+      - if: whatsapp_count == 0
+        then: omit "- {whatsapp_count} WhatsApp replies" line
+      - if: odoo_count == 0
+        then: omit "- {odoo_count} Odoo drafts" line
+
+  confirmation:
+    description: Sent after user approves draft and MCP action completes successfully
+    trigger: MCP action (email send, LinkedIn post, WhatsApp send) returns success
+    max_length: 300
+    format: |
+      ✅ {action_type} completed
+      {action_summary}
+      Logged: vault/Logs/MCP_Actions/{timestamp}.md
+
+    variables:
+      action_type:
+        type: string
+        enum:
+          - "Email sent"
+          - "LinkedIn post published"
+          - "WhatsApp message sent"
+          - "Odoo draft created"
+          - "Facebook post published"
+          - "Instagram post published"
+          - "Twitter post published"
+        example: "Email sent"
+      action_summary:
+        type: string
+        max_length: 120
+        description: One-line summary of action taken
+        example: "Email sent to john@example.com: Re: Project deadline"
+      timestamp:
+        type: string
+        format: date
+        description: Date for log file (YYYY-MM-DD)
+        example: "2026-02-15"
+
+    example_output: |
+      ✅ Email sent completed
+      Email sent to john@example.com: Re: Project deadline
+      Logged: vault/Logs/MCP_Actions/2026-02-15.md
+
+  system_status:
+    description: Optional daily health summary (experimental, not MVP)
+    trigger: Scheduled daily at 08:00 AM (cron)
+    max_length: 400
+    format: |
+      📊 Daily Summary
+      ✅ Uptime: {uptime_hours}h
+      📧 Emails: {emails_today}
+      📱 Social: {social_today}
+      💰 API cost: ${api_cost_today}
+      Dashboard: {dashboard_url}
+
+    variables:
+      uptime_hours:
+        type: integer
+        description: Hours since Cloud Agent started
+        example: 72
+      emails_today:
+        type: integer
+        description: Emails drafted today
+        example: 15
+      social_today:
+        type: integer
+        description: Social media posts drafted today (LinkedIn + Facebook + Instagram + Twitter)
+        example: 3
+      api_cost_today:
+        type: number
+        format: float
+        description: Total Claude API cost today (USD)
+        example: 0.45
+      dashboard_url:
+        type: string
+        format: url
+        example: "http://192.168.1.100:3000"
+
+    example_output: |
+      📊 Daily Summary
+      ✅ Uptime: 72h
+      📧 Emails: 15
+      📱 Social: 3
+      💰 API cost: $0.45
+      Dashboard: http://192.168.1.100:3000
+
+error_handling:
+  send_failure:
+    retry_policy:
+      max_attempts: 3
+      backoff: [5, 10, 20]  # Seconds between retries
+      on_final_failure:
+        action: send_email
+        recipient: "${FALLBACK_EMAIL}"
+        subject: "WhatsApp notification failed"
+        body: |
+          WhatsApp notification failed after 3 attempts.
+          Original message:
+          {notification_message}
+
+          Error: {error_details}
+
+  session_expired:
+    detection: Playwright detects WhatsApp Web login screen (QR code canvas visible)
+    action:
+      - create_file: "vault/Needs_Action/whatsapp_session_expired.md"
+      - pause_notifications: true
+      - alert_dashboard: "⚠️ WhatsApp session expired - re-scan QR code required"
+
+  rate_limit_exceeded:
+    detection: >1 notification sent in last 60 seconds
+    action: queue_notification_for_next_minute
+
+validation_rules:
+  message_length:
+    rule: len(message) <= 500
+    error: "Notification message exceeds 500 characters"
+
+  url_format:
+    rule: dashboard_url matches regex ^https?://[^/]+:[0-9]+$
+    error: "Invalid dashboard URL format"
+
+  emoji_support:
+    rule: Only standard Unicode emojis (⚠️ 🚨 📋 ✅ 📊 📧 📱 💰)
+    error: "Use standard emojis only (WhatsApp Web compatibility)"
+
+security:
+  pii_filtering:
+    description: Never include full email addresses, phone numbers, or account numbers in notifications
+    rules:
+      - email_addresses: Show only sender name, not full email (john@example.com → "John Doe")
+      - phone_numbers: Never include in message
+      - account_numbers: Never include in message
+      - message_preview: Limit to first 50 characters of email/WhatsApp body
+
+logging:
+  file: vault/Logs/Cloud/notifications.md
+  format: |
+    ---
+    notification_id: {notification_id}
+    timestamp: {timestamp}
+    event_type: {event_type}
+    delivery_status: {delivery_status}
+    ---
+
+    **Message Sent**:
+    {message_text}
+
+    **Outcome**: {delivery_status} (sent | failed | fallback_email)
