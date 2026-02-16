@@ -43,6 +43,8 @@ logs/
 .env
 .env.local
 .env.*.local
+.env.cloud
+.env.production
 
 # Vault Data (User-generated content - don't commit)
 vault/Logs/*.md
@@ -108,4 +110,26 @@ ecosystem.config.js.bak
 
 # Claude Code MCP config (contains credentials)
 .claude/mcp_config.json
-.claude/mcp_config.json
+
+# ========================================
+# PLATINUM TIER - Security Partition
+# ========================================
+# Cloud Agent NEVER has these files:
+*.session
+*.session.json
+.whatsapp_session.json
+credentials.json
+vault/.secrets/
+
+# Next.js Dashboard
+nextjs_dashboard/node_modules/
+nextjs_dashboard/.next/
+nextjs_dashboard/out/
+nextjs_dashboard/build/
+
+# Git sync state (runtime only)
+vault/.git_sync_state.md
+
+# Odoo backups (Cloud VM only)
+odoo_backups/
+*.sql.gz

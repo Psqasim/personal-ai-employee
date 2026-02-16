@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Dashboard.md",
+                "file": "Approved/Email/MANUAL_EMAIL_Muhammad_Qasim_1771184111833.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Dashboard"
+              "title": "MANUAL_EMAIL_Muhammad_Qasim_1771184111833"
             }
           }
         ]
@@ -94,7 +94,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "Dashboard.md",
+                "file": "Approved/Email/MANUAL_EMAIL_Muhammad_Qasim_1771184111833.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -104,7 +104,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks for Dashboard"
+              "title": "Backlinks for MANUAL_EMAIL_Muhammad_Qasim_1771184111833"
             }
           },
           {
@@ -113,12 +113,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "Dashboard.md",
+                "file": "Approved/Email/MANUAL_EMAIL_Muhammad_Qasim_1771184111833.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Outgoing links from Dashboard"
+              "title": "Outgoing links from MANUAL_EMAIL_Muhammad_Qasim_1771184111833"
             }
           },
           {
@@ -156,13 +156,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "Dashboard.md",
+                "file": "Approved/Email/MANUAL_EMAIL_Muhammad_Qasim_1771184111833.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Outline of Dashboard"
+              "title": "Outline of MANUAL_EMAIL_Muhammad_Qasim_1771184111833"
             }
           }
         ]
@@ -185,41 +185,41 @@
   },
   "active": "53e0f1dd7b356752",
   "lastOpenFiles": [
-    "Pending_Approval/WhatsApp/WHATSAPP_DRAFT_WHATSAPP_DRAFT_chat_12345@c.us_1771140018.md",
-    "Approved/LinkedIn/TEST_POST.md",
-    "Pending_Approval/LinkedIn/TEST_POST.md",
-    "Pending_Approval/LinkedIn/TEST_POST.md.tmp.44235.1771137839191",
-    "Logs/MCP_Actions/email_send_20260215_114309.log",
+    "Approved/Email/EMAIL_DRAFT_FINAL_TEST.md",
+    "Pending_Approval/retry_TEST_EMAIL_20260214_131143.md",
+    "Approved/Email/MANUAL_EMAIL_Muhammad_Qasim_1771184111833.md",
+    "Pending_Approval/Email/MANUAL_EMAIL_Muhammad_Qasim_1771184111833.md",
+    "Pending_Approval/WhatsApp/MANUAL_WHATSAPP_Muhammad_Qasim_1771184031595.md",
+    "Approved/WhatsApp/MANUAL_WHATSAPP_Muhammad_Qasim_1771184031595.md",
+    "Dashboard.md",
+    "Approved/Email/yooo.md",
+    "Rejected/WhatsApp/WHATSAPP_DRAFT_923010822227_1771069965.md",
+    "Approved/Email/testing22.md",
+    "Approved/WhatsApp/WHATSAPP_DRAFT_WHATSAPP_DRAFT_chat_12345@c.us_1771140018.md",
+    "Pending_Approval/Email/yooo.md",
+    "Pending_Approval/Email/testing22.md",
+    "Pending_Approval/TEST-Bronze-Validation.md",
+    "Archived/WHATSAPP_DRAFT_923010822227_1771069724.md",
+    "Archived",
+    "Pending_Approval/Test/bad-yaml.md",
+    "Pending_Approval/Test",
+    "Approved/Email/REALTIME_TEST.md",
+    "Pending_Approval/Email/REALTIME_TEST.md",
     "Approved/Email/TEST_EMAIL.md",
     "Pending_Approval/Email/TEST_EMAIL.md",
-    "Pending_Approval/Email/TEST_EMAIL.md.tmp.44235.1771137669769",
-    "Logs/MCP_Actions/test_20260215_113005.log",
-    "Rejected/Plans",
-    "Rejected/LinkedIn",
-    "Rejected/WhatsApp",
-    "Rejected/Email",
-    "Dashboard.md.tmp",
-    "Dashboard.md.bak.2026-02-15_11-25-42",
     "Company_Handbook.md",
-    "Logs/MCP_Actions/2026-02-14.md",
-    "Inbox/TEST-Bronze-Validation.md",
-    "Inbox/WHATSAPP_test_$(date +%s).md",
-    "Pending_Approval/WhatsApp/WHATSAPP_DRAFT_923010822227_1771134188.md",
-    "Pending_Approval/WhatsApp/WHATSAPP_DRAFT_john_smith_001_1771134184.md",
-    "Pending_Approval/WhatsApp/WHATSAPP_DRAFT_923010822227_1771134181.md",
-    "Pending_Approval/WhatsApp/WHATSAPP_DRAFT_923010822227_1771134179.md",
-    "Dashboard.md",
-    "Pending_Approval/WhatsApp/WHATSAPP_DRAFT_923010822227_1771070007.md",
-    "Pending_Approval/WhatsApp/WHATSAPP_DRAFT_john_smith_001_1771070004.md",
-    "Pending_Approval/WhatsApp/WHATSAPP_DRAFT_923010822227_1771070001.md",
-    "Pending_Approval/WhatsApp/WHATSAPP_DRAFT_923010822227_1771069999.md",
-    "Pending_Approval/WhatsApp/WHATSAPP_DRAFT_923010822227_1771069965.md",
-    "Inbox/WHATSAPP_urgent_1771069945.md",
-    "Done/WHATSAPP_DRAFT_923010822227_1771069724.md",
-    "Done/WHATSAPP_DRAFT_923010822227_1771069721.md",
-    "Done/WHATSAPP_DRAFT_923010822227_1771069399.md",
-    "Done/WHATSAPP_DRAFT_923010822227_1771069340.md",
-    "Approved/WhatsApp/WHATSAPP_DRAFT_923010822227_1771069724.md",
-    "Approved/WhatsApp/WHATSAPP_DRAFT_923010822227_1771069721.md"
+    "Approved/LinkedIn/LINKEDIN_POST_2026-02-14.md",
+    "Approved/LinkedIn/TEST_POST.md",
+    "Logs/Plans/WHATSAPP_DRAFT_john_smith_001_1771069727.md",
+    "Approved/Email/FINAL_TEST_EMAIL.md",
+    "Approved/Email/EMAIL_DRAFT_TEST.md",
+    "Users/users.json",
+    "Users",
+    "Logs/MCP_Health",
+    "Logs/Local",
+    "Logs/Cloud",
+    "Pending_Approval/LinkedIn/TEST_POST.md.tmp.44235.1771137839191",
+    "Logs/MCP_Actions/email_send_20260215_114309.log",
+    "Pending_Approval/Email/TEST_EMAIL.md.tmp.44235.1771137669769"
   ]
 }

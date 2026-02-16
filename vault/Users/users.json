@@ -1,0 +1,20 @@
+{
+  "users": [
+    {
+      "id": "1",
+      "email": "muhammadqasim0326@gmail.com",
+      "password": "$2b$12$n3sYdwvELbaqHJnOmQkoHu5ZkhNuVs5hDTgC497DGpxnVUpTEc66W",
+      "role": "admin",
+      "name": "Muhammad Qasim",
+      "created_at": "2026-02-15T00:00:00Z"
+    },
+    {
+      "id": "2",
+      "email": "test@gmail.com",
+      "password": "$2b$12$S3Y3nCGUm76L5Bq6Iyxq/eQoahlAuhcxZWBoMpO5u/QkkgFz.h8eW",
+      "role": "viewer",
+      "name": "tester",
+      "created_at": "2026-02-15T18:21:50.975Z"
+    }
+  ]
+}

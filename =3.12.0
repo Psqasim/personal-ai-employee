@@ -1,5 +1,0 @@
-Collecting filelock
-  Downloading filelock-3.23.0-py3-none-any.whl.metadata (2.0 kB)
-Downloading filelock-3.23.0-py3-none-any.whl (22 kB)
-Installing collected packages: filelock
-Successfully installed filelock-3.23.0

@@ -1,0 +1,428 @@
+openapi: 3.0.3
+info:
+  title: MCP Server Health Check API
+  description: Standard health check endpoint for all MCP servers to report online/offline/degraded status
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8000
+    description: Generic MCP server (port varies by MCP)
+
+paths:
+  /health:
+    get:
+      summary: Health check endpoint
+      description: Returns current health status of MCP server. Called every 5 minutes by Local Agent for monitoring.
+      operationId: getHealth
+      tags:
+        - Health
+      responses:
+        '200':
+          description: MCP server is online and operational
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              examples:
+                email_mcp_healthy:
+                  value:
+                    status: "online"
+                    mcp_name: "email-mcp"
+                    last_successful_call: "2026-02-15T14:25:00Z"
+                    uptime_seconds: 86400
+                    version: "1.0.0"
+                    capabilities: ["send_email", "draft_email", "search_inbox"]
+                whatsapp_mcp_degraded:
+                  value:
+                    status: "degraded"
+                    mcp_name: "whatsapp-mcp"
+                    last_successful_call: "2026-02-15T14:20:00Z"
+                    uptime_seconds: 3600
+                    version: "1.0.0"
+                    capabilities: ["send_message", "monitor_chats"]
+                    warning: "WhatsApp Web session expires in 2 days"
+        '503':
+          description: MCP server is offline or experiencing critical errors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              examples:
+                email_mcp_offline:
+                  value:
+                    status: "offline"
+                    mcp_name: "email-mcp"
+                    last_successful_call: "2026-02-15T12:00:00Z"
+                    error: "SMTP authentication failed"
+
+  /health/detailed:
+    get:
+      summary: Detailed health check with metrics
+      description: Returns extended health metrics including request counts, error rates, response times. Optional endpoint for debugging.
+      operationId: getDetailedHealth
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Detailed health metrics
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/HealthResponse'
+                  - type: object
+                    properties:
+                      metrics:
+                        $ref: '#/components/schemas/HealthMetrics'
+              examples:
+                email_mcp_detailed:
+                  value:
+                    status: "online"
+                    mcp_name: "email-mcp"
+                    last_successful_call: "2026-02-15T14:25:00Z"
+                    uptime_seconds: 86400
+                    version: "1.0.0"
+                    capabilities: ["send_email", "draft_email", "search_inbox"]
+                    metrics:
+                      total_requests_today: 47
+                      successful_requests: 45
+                      failed_requests: 2
+                      average_response_time_ms: 150
+                      last_error: "SMTP timeout at 14:15:00"
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - mcp_name
+        - last_successful_call
+      properties:
+        status:
+          type: string
+          enum: [online, degraded, offline]
+          description: |
+            - online: All recent calls succeeded, fully operational
+            - degraded: 1-2 failures in last 3 calls OR slow response times
+            - offline: 3+ consecutive failures OR no successful call in 60 minutes
+          example: "online"
+        mcp_name:
+          type: string
+          description: MCP server identifier matching ~/.config/claude-code/mcp.json
+          enum:
+            - email-mcp
+            - whatsapp-mcp
+            - linkedin-mcp
+            - facebook-mcp
+            - instagram-mcp
+            - twitter-mcp
+            - odoo-mcp
+            - calendar-mcp
+            - browser-mcp
+          example: "email-mcp"
+        last_successful_call:
+          type: string
+          format: date-time
+          description: Timestamp of last successful MCP invocation
+          example: "2026-02-15T14:25:00Z"
+        uptime_seconds:
+          type: integer
+          description: Seconds since MCP server started
+          example: 86400
+        version:
+          type: string
+          description: MCP server version (semver)
+          pattern: '^\d+\.\d+\.\d+$'
+          example: "1.0.0"
+        capabilities:
+          type: array
+          items:
+            type: string
+          description: List of supported MCP actions/tools
+          example: ["send_email", "draft_email", "search_inbox"]
+        warning:
+          type: string
+          nullable: true
+          description: Optional warning message (e.g., "Session expires soon", "Rate limit approaching")
+          maxLength: 200
+          example: "WhatsApp Web session expires in 2 days"
+        error:
+          type: string
+          nullable: true
+          description: Error message if status is offline or degraded
+          maxLength: 200
+          example: "SMTP authentication failed"
+
+    HealthMetrics:
+      type: object
+      description: Detailed performance metrics for debugging
+      properties:
+        total_requests_today:
+          type: integer
+          description: Total MCP invocations today (resets at midnight)
+          example: 47
+        successful_requests:
+          type: integer
+          description: Successful invocations today
+          example: 45
+        failed_requests:
+          type: integer
+          description: Failed invocations today
+          example: 2
+        average_response_time_ms:
+          type: number
+          format: float
+          description: Average response time in milliseconds (last 100 requests)
+          example: 150.5
+        last_error:
+          type: string
+          nullable: true
+          description: Most recent error message with timestamp
+          maxLength: 200
+          example: "SMTP timeout at 14:15:00"
+
+tags:
+  - name: Health
+    description: MCP server health monitoring
+
+---
+
+# Health Check Implementation Guide
+
+## MCP Server Implementation (Python Example)
+
+```python
+from fastapi import FastAPI
+from datetime import datetime, timedelta
+
+app = FastAPI()
+
+# Global state (in production, use proper state management)
+last_successful_call = datetime.now()
+uptime_start = datetime.now()
+total_requests = 0
+successful_requests = 0
+failed_requests = 0
+
+@app.get("/health")
+def get_health():
+    """Standard health check endpoint."""
+    uptime_seconds = int((datetime.now() - uptime_start).total_seconds())
+
+    # Determine status
+    time_since_success = (datetime.now() - last_successful_call).total_seconds()
+    if time_since_success < 60:
+        status = "online"
+    elif time_since_success < 300:  # 5 minutes
+        status = "degraded"
+    else:
+        status = "offline"
+
+    return {
+        "status": status,
+        "mcp_name": "email-mcp",
+        "last_successful_call": last_successful_call.isoformat() + "Z",
+        "uptime_seconds": uptime_seconds,
+        "version": "1.0.0",
+        "capabilities": ["send_email", "draft_email", "search_inbox"],
+    }
+
+@app.get("/health/detailed")
+def get_detailed_health():
+    """Detailed health check with metrics."""
+    basic_health = get_health()
+
+    return {
+        **basic_health,
+        "metrics": {
+            "total_requests_today": total_requests,
+            "successful_requests": successful_requests,
+            "failed_requests": failed_requests,
+            "average_response_time_ms": 150.0,  # Calculate from request logs
+            "last_error": None,  # Most recent error message
+        }
+    }
+```
+
+## Local Agent Health Monitoring (Python)
+
+```python
+import requests
+from datetime import datetime
+
+MCP_SERVERS = {
+    "email-mcp": "http://localhost:8000",
+    "whatsapp-mcp": "http://localhost:8001",
+    "linkedin-mcp": "http://localhost:8002",
+    "odoo-mcp": "http://localhost:8003",
+}
+
+def check_mcp_health(mcp_name: str, base_url: str) -> dict:
+    """Poll MCP health endpoint, return status."""
+    try:
+        response = requests.get(f"{base_url}/health", timeout=5)
+        if response.status_code == 200:
+            health = response.json()
+            return {
+                "mcp_name": mcp_name,
+                "status": health["status"],
+                "last_successful_call": health["last_successful_call"],
+                "last_call_status": "success",
+                "error_message": health.get("error"),
+            }
+        else:
+            return {
+                "mcp_name": mcp_name,
+                "status": "offline",
+                "last_call_status": "error",
+                "error_message": f"HTTP {response.status_code}",
+            }
+    except requests.exceptions.Timeout:
+        return {
+            "mcp_name": mcp_name,
+            "status": "offline",
+            "last_call_status": "timeout",
+            "error_message": "Health check timeout (5s)",
+        }
+    except Exception as e:
+        return {
+            "mcp_name": mcp_name,
+            "status": "offline",
+            "last_call_status": "error",
+            "error_message": str(e)[:200],
+        }
+
+def monitor_all_mcps():
+    """Check health of all configured MCPs."""
+    results = {}
+    for mcp_name, base_url in MCP_SERVERS.items():
+        results[mcp_name] = check_mcp_health(mcp_name, base_url)
+
+    # Log to vault
+    log_mcp_health(results)
+
+    # Update dashboard API response
+    update_dashboard_health_cache(results)
+
+    return results
+
+def log_mcp_health(results: dict):
+    """Write health status to vault/Logs/MCP_Health/."""
+    for mcp_name, health in results.items():
+        log_file = f"vault/Logs/MCP_Health/{mcp_name}.md"
+        with open(log_file, 'w') as f:
+            f.write(f"""---
+mcp_name: {mcp_name}
+status: {health['status']}
+last_successful_call: {health.get('last_successful_call', 'never')}
+last_call_status: {health['last_call_status']}
+error_message: {health.get('error_message')}
+checked_at: {datetime.now().isoformat()}Z
+---
+
+# MCP Health Log: {mcp_name}
+
+**Status**: {health['status']}
+**Last Successful Call**: {health.get('last_successful_call', 'never')}
+**Error**: {health.get('error_message', 'none')}
+""")
+```
+
+## Dashboard Integration (Next.js API Route)
+
+```typescript
+// app/api/health/route.ts
+import fs from 'fs';
+import path from 'path';
+
+export async function GET() {
+  const healthDir = path.join(process.env.VAULT_PATH!, 'Logs/MCP_Health');
+  const mcp_servers: any[] = [];
+
+  // Read health logs for each MCP
+  const files = fs.readdirSync(healthDir);
+  for (const file of files) {
+    const content = fs.readFileSync(path.join(healthDir, file), 'utf-8');
+    const health = parseMCPHealth(content);  // Parse YAML frontmatter
+    mcp_servers.push(health);
+  }
+
+  return Response.json({
+    mcp_servers,
+    timestamp: new Date().toISOString(),
+  });
+}
+```
+
+## Status Determination Algorithm
+
+```python
+def determine_mcp_status(last_successful_call: datetime, recent_failures: int) -> str:
+    """Determine MCP status based on last success time and recent failure count."""
+    time_since_success = (datetime.now() - last_successful_call).total_seconds()
+
+    # Online: Recent success (< 1 min) AND low failure rate
+    if time_since_success < 60 and recent_failures == 0:
+        return "online"
+
+    # Degraded: Moderate failures OR medium latency
+    if time_since_success < 300 and recent_failures <= 2:  # < 5 min, <= 2 failures
+        return "degraded"
+
+    # Offline: No recent success OR high failure rate
+    if time_since_success >= 3600 or recent_failures >= 3:  # > 1 hour OR 3+ failures
+        return "offline"
+
+    return "degraded"  # Default to degraded if uncertain
+```
+
+## Alert Thresholds
+
+| Condition | Alert | Action |
+|-----------|-------|--------|
+| MCP status = offline for >5 min | Dashboard warning banner | Display "⚠️ {mcp_name} offline - check MCP server logs" |
+| 3+ MCPs offline simultaneously | WhatsApp alert | Send "🚨 Multiple MCPs offline - system degraded" |
+| Degraded for >30 min | Dashboard warning | Display "⚠️ {mcp_name} degraded - check performance" |
+| Session expiry warning (WhatsApp MCP) | Dashboard notification | Display "⚠️ WhatsApp session expires in 2 days - re-scan QR soon" |
+
+## Testing
+
+### Manual Health Check Test
+
+```bash
+# Test email-mcp health endpoint
+curl http://localhost:8000/health | jq
+
+# Expected output:
+{
+  "status": "online",
+  "mcp_name": "email-mcp",
+  "last_successful_call": "2026-02-15T14:25:00Z",
+  "uptime_seconds": 86400,
+  "version": "1.0.0",
+  "capabilities": ["send_email", "draft_email", "search_inbox"]
+}
+```
+
+### Integration Test (pytest)
+
+```python
+def test_mcp_health_monitoring():
+    """Test Local Agent MCP health monitoring."""
+    results = monitor_all_mcps()
+
+    # Verify all MCPs checked
+    assert "email-mcp" in results
+    assert "whatsapp-mcp" in results
+
+    # Verify health log written
+    assert os.path.exists("vault/Logs/MCP_Health/email-mcp.md")
+
+    # Verify status is one of valid values
+    assert results["email-mcp"]["status"] in ["online", "degraded", "offline"]
+```
+
+---
+
+**MCP Health Check API complete. Ready for implementation in MCP servers and Local Agent monitoring.**
