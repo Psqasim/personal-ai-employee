@@ -194,6 +194,7 @@ def run_cycle():
 
     # ── Phase 1: Read ─────────────────────────────────────────────────────────
     inbox: list[tuple[str, str]] = []   # (sender, last_msg)
+    _seen_this_cycle: set = set()       # deduplicate within one cycle
 
     with sync_playwright() as p:
         ctx = _make_browser(p)
@@ -220,10 +221,12 @@ def run_cycle():
                         continue
 
                     cache_key = f"{sender}:{last_msg[:50]}"
-                    if cache_key in _replied_cache:
-                        logger.debug(f"Already replied to {sender}")
+                    # Skip if already replied (persistent) OR seen in this cycle (dedup)
+                    if cache_key in _replied_cache or cache_key in _seen_this_cycle:
+                        logger.debug(f"Already replied/seen: {sender}")
                         continue
 
+                    _seen_this_cycle.add(cache_key)
                     logger.info(f"📩 {sender}: {last_msg[:70]}")
                     inbox.append((sender, last_msg))
 
