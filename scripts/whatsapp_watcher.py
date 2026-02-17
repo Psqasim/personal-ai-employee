@@ -159,11 +159,25 @@ def log_action(sender: str, msg: str, reply: str, urgent: bool, sent: bool):
 # ── Browser helpers ───────────────────────────────────────────────────────────
 def _make_browser(p):
     """Launch a fresh persistent context (closes after each phase)."""
+    args = [
+        "--no-sandbox", "--disable-dev-shm-usage",
+        "--window-size=1,1", "--window-position=0,0",
+    ]
+    if HEADLESS:
+        # Cloud/server: disable GPU, use SwiftShader so Chrome doesn't report
+        # itself as "HeadlessChrome" (which WhatsApp blocks with "Update Chrome")
+        args += ["--disable-gpu", "--enable-unsafe-swiftshader",
+                 "--disable-setuid-sandbox"]
+
+    # Spoof a real Chrome UA — WhatsApp blocks the default "HeadlessChrome" UA
+    ua = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+          "(KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36")
+
     return p.chromium.launch_persistent_context(
         user_data_dir=SESSION_PATH,
         headless=HEADLESS,
-        args=["--no-sandbox", "--disable-dev-shm-usage",
-              "--window-size=1,1", "--window-position=0,0"],
+        args=args,
+        user_agent=ua,
         viewport={"width": 1280, "height": 800},
     )
 
