@@ -112,7 +112,8 @@ class ApprovalHandler:
             logger.info(f"Processing {draft_type}: {file_path.name}")
             try:
                 # Parse frontmatter BEFORE process_approval() moves the file
-                frontmatter = parse_frontmatter(str(file_path)) or {}
+                # parse_frontmatter returns (dict, body_string) tuple
+                frontmatter, _ = parse_frontmatter(str(file_path))
 
                 ok = process_approval(str(file_path), draft_type)
                 if ok:
