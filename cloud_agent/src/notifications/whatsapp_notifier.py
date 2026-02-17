@@ -62,7 +62,8 @@ def _send_in_thread(message: str, label: str) -> None:
                 mcp_server="whatsapp-mcp",
                 tool_name="send_message",
                 arguments={"chat_id": chat_id, "message": message},
-                server_script="mcp_servers/whatsapp_mcp/server.py"
+                retry_count=1,
+                retry_delay=2
             )
             if result.get("success"):
                 logger.info(f"[whatsapp_notifier] ✅ Sent {label} notification")
