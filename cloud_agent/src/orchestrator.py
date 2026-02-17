@@ -7,7 +7,7 @@ import sys
 import time
 import logging
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -16,6 +16,12 @@ sys.path.insert(0, str(project_root))
 from agent_skills.env_validator import EnvValidator
 from agent_skills.git_sync_state import GitSyncStateManager
 from agent_skills.api_usage_tracker import APIUsageTracker
+from cloud_agent.src.notifications.whatsapp_notifier import (
+    notify_urgent_email,
+    notify_pending_approvals,
+    notify_critical_error,
+    notify_morning_summary,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,6 +52,9 @@ class CloudOrchestrator:
         # Initialize components
         self.sync_state_mgr = GitSyncStateManager(self.vault_path)
         self.api_tracker = APIUsageTracker(self.vault_path, self.agent_id)
+
+        # Track last morning summary sent (avoid duplicates)
+        self._morning_summary_sent_date: str = ""
 
         # Gmail watcher (polls on each orchestration cycle)
         from cloud_agent.src.watchers.gmail_watcher import CloudGmailWatcher
@@ -143,8 +152,17 @@ class CloudOrchestrator:
 
                 logger.info(f"✅ Draft created: {draft_path.name}")
 
+                # Notify admin via WhatsApp if urgent email
+                priority = email_data.get("priority", "").lower()
+                if priority in ("high", "urgent"):
+                    notify_urgent_email(
+                        sender=email_data.get("from", "Unknown"),
+                        subject=email_data.get("subject", "No Subject")
+                    )
+
             except Exception as e:
                 logger.error(f"Failed to process {email_file.name}: {e}")
+                notify_critical_error(f"Email processing failed: {e}")
 
     def generate_social_drafts(self):
         """
@@ -164,17 +182,61 @@ class CloudOrchestrator:
 
     def send_notifications(self):
         """
-        Send WhatsApp notifications for urgent events
+        Send WhatsApp notifications for pending approvals and morning summary.
+        Urgent email notifications are sent inline in process_inbox().
         """
         logger.debug("Checking notifications...")
 
-        # TODO: Implement WhatsApp notifications
-        # 1. Check for urgent emails (priority="High")
-        # 2. Check for critical errors (Git sync failing >5 min)
-        # 3. Send WhatsApp notification via MCP
-        # 4. Log notification sent
+        vault = Path(self.vault_path)
 
-        pass
+        # Check pending approvals — alert if 5+
+        pending_count = 0
+        oldest_item = ""
+        oldest_mtime = float("inf")
+        pending_approval_path = vault / "Pending_Approval"
+        if pending_approval_path.exists():
+            for f in pending_approval_path.rglob("*.md"):
+                pending_count += 1
+                mtime = f.stat().st_mtime
+                if mtime < oldest_mtime:
+                    oldest_mtime = mtime
+                    oldest_item = f.name
+
+        if pending_count >= 5:
+            logger.info(f"⏳ {pending_count} items pending approval — sending WhatsApp alert")
+            notify_pending_approvals(count=pending_count, oldest_item=oldest_item)
+
+        # Morning summary at 8 AM UTC (send once per day)
+        now_utc = datetime.now(timezone.utc)
+        today_str = now_utc.strftime("%Y-%m-%d")
+        if now_utc.hour == 8 and self._morning_summary_sent_date != today_str:
+            self._morning_summary_sent_date = today_str
+
+            # Count inbox + pending emails
+            inbox_count = len(list((vault / "Inbox").glob("EMAIL_*.md"))) if (vault / "Inbox").exists() else 0
+            pending_email_count = len(list((vault / "Pending_Approval" / "Email").glob("*.md"))) if (vault / "Pending_Approval" / "Email").exists() else 0
+            emails_pending = inbox_count + pending_email_count
+
+            # Count done files from yesterday
+            done_path = vault / "Done"
+            yesterday_str = (now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+                             .strftime("%Y-%m-%d"))
+            processed_yesterday = 0
+            if done_path.exists():
+                for f in done_path.rglob("*.md"):
+                    mtime_str = datetime.fromtimestamp(f.stat().st_mtime, tz=timezone.utc).strftime("%Y-%m-%d")
+                    if mtime_str == yesterday_str:
+                        processed_yesterday += 1
+
+            # Get today's API cost
+            api_cost_today = self.api_tracker.get_daily_cost() if hasattr(self.api_tracker, "get_daily_cost") else 0.0
+
+            logger.info("☀️ Sending morning summary WhatsApp notification")
+            notify_morning_summary(
+                emails_pending=emails_pending,
+                processed_yesterday=processed_yesterday,
+                api_cost_today=api_cost_today
+            )
 
     def poll_gmail(self):
         """

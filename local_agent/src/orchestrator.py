@@ -16,6 +16,7 @@ sys.path.insert(0, str(project_root))
 from agent_skills.env_validator import EnvValidator
 from agent_skills.claim_manager import ClaimManager
 from agent_skills.api_usage_tracker import APIUsageTracker
+from agent_skills.stale_file_recovery import recover_stale_files
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,6 +47,9 @@ class LocalOrchestrator:
         # Initialize components
         self.claim_mgr = ClaimManager(self.vault_path, self.agent_id)
         self.api_tracker = APIUsageTracker(self.vault_path, self.agent_id)
+
+        # Track last stale recovery check (run hourly)
+        self._last_stale_check: float = 0.0
 
         logger.info("Local Orchestrator initialized")
 
@@ -85,6 +89,20 @@ class LocalOrchestrator:
 
                 pass
 
+    def recover_stale(self):
+        """
+        FR-P016: Check vault/In_Progress/ every hour for stale files (>24h).
+        Move them back to Needs_Action/ and log recovery.
+        """
+        now = time.time()
+        if now - self._last_stale_check < 3600:  # Run at most once per hour
+            return
+        self._last_stale_check = now
+
+        count = recover_stale_files(self.vault_path)
+        if count:
+            logger.info(f"🔄 Stale recovery: moved {count} file(s) back to Needs_Action/")
+
     def orchestration_cycle(self):
         """
         Single orchestration cycle
@@ -96,6 +114,9 @@ class LocalOrchestrator:
 
             # Monitor and claim tasks
             self.monitor_needs_action()
+
+            # FR-P016: Stale file recovery (runs hourly)
+            self.recover_stale()
 
             logger.debug("Orchestration cycle complete")
 

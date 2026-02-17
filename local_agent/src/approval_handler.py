@@ -21,6 +21,10 @@ sys.path.insert(0, str(project_root))
 
 from agent_skills.approval_watcher import process_approval
 from agent_skills.vault_parser import parse_frontmatter
+from cloud_agent.src.notifications.whatsapp_notifier import (
+    notify_task_completed,
+    notify_critical_error,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -113,14 +117,26 @@ class ApprovalHandler:
                     self._processed.add(str(file_path))
                     self._log_action(file_path, draft_type, "success")
                     logger.info(f"✅ {draft_type} processed: {file_path.name}")
+
+                    # WhatsApp confirmation after successful send
+                    if draft_type in ("email", "whatsapp"):
+                        frontmatter = parse_frontmatter(str(file_path)) or {}
+                        notify_task_completed(
+                            task_type=draft_type.capitalize(),
+                            recipient=frontmatter.get("to", "Unknown"),
+                            subject=frontmatter.get("subject")
+                        )
                 else:
                     self._log_action(file_path, draft_type, "failed")
                     logger.warning(f"⚠️  {draft_type} processing returned False: {file_path.name}")
+                    if draft_type in ("email", "whatsapp"):
+                        notify_critical_error(f"{draft_type.capitalize()} send failed: {file_path.name}")
 
             except Exception as e:
                 logger.error(f"❌ Failed to process {file_path.name}: {e}")
                 self._log_action(file_path, draft_type, "error", str(e))
                 self._move_to_failed(file_path, str(e))
+                notify_critical_error(f"{draft_type.capitalize()} error after retries: {e}")
 
         return success_count
 
