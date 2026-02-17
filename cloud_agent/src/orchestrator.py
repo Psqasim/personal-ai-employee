@@ -84,7 +84,16 @@ class CloudOrchestrator:
                 email_data = parse_email_from_vault(str(email_file))
 
                 if not email_data:
-                    logger.warning(f"Failed to parse: {email_file.name}")
+                    logger.warning(f"Failed to parse (skipping): {email_file.name}")
+                    # Move unparseable file to quarantine to avoid infinite retry
+                    quarantine = Path(self.vault_path) / "Logs" / "Cloud" / "unparseable"
+                    quarantine.mkdir(parents=True, exist_ok=True)
+                    try:
+                        import shutil
+                        shutil.move(str(email_file), str(quarantine / email_file.name))
+                        logger.info(f"Quarantined unparseable file: {email_file.name}")
+                    except Exception as qe:
+                        logger.warning(f"Could not quarantine {email_file.name}: {qe}")
                     continue
 
                 # Check if already drafted
