@@ -92,11 +92,12 @@ def _send_in_thread(message: str, label: str) -> None:
                 retry_count=1,
                 retry_delay=2
             )
-            if result.get("success"):
-                logger.info(f"[whatsapp_notifier] ✅ Sent {label} via WhatsApp")
+            # WhatsApp MCP returns {"message_id": ..., "sent_at": ...} on success
+            if result.get("message_id") or result.get("success"):
+                logger.info(f"[whatsapp_notifier] ✅ Sent {label} via WhatsApp (id={result.get('message_id')})")
                 _log_notification(label, message, "sent")
             else:
-                err = result.get("error", "unknown")
+                err = result.get("error", str(result) or "unknown")
                 logger.warning(f"[whatsapp_notifier] ⚠️ WhatsApp MCP failed {label}: {err}")
                 _log_notification(label, message, "mcp_failed", err)
         except Exception as e:
