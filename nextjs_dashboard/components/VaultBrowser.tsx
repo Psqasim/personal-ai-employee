@@ -211,8 +211,44 @@ export function VaultBrowser({ sections, onRefresh }: VaultBrowserProps) {
                           </div>
 
                           {isExpanded && (
-                            <div className="mb-3 p-3 bg-gray-50 dark:bg-gray-900 rounded text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap max-h-[300px] overflow-y-auto">
-                              {item.content}
+                            <div className="mb-3 space-y-2 text-xs">
+                              {/* Key fields table */}
+                              {item.metadata && (() => {
+                                const m = item.metadata;
+                                const rows: { label: string; value: string }[] = [];
+                                if (m.to)           rows.push({ label: "To",      value: String(m.to) });
+                                if (m.from)         rows.push({ label: "From",    value: String(m.from) });
+                                if (m.subject)      rows.push({ label: "Subject", value: String(m.subject) });
+                                if (m.status)       rows.push({ label: "Status",  value: String(m.status) });
+                                if (m.sent_at)      rows.push({ label: "Sent",    value: new Date(m.sent_at).toLocaleString() });
+                                if (m.created_at)   rows.push({ label: "Created", value: new Date(m.created_at).toLocaleString() });
+                                if (m.created_by)   rows.push({ label: "By",      value: String(m.created_by) });
+                                if (m.priority)     rows.push({ label: "Priority",value: String(m.priority) });
+                                if (m.chat_id)      rows.push({ label: "Chat ID", value: String(m.chat_id) });
+                                if (m.source)       rows.push({ label: "Source",  value: String(m.source) });
+                                return rows.length > 0 ? (
+                                  <div className="bg-gray-50 dark:bg-gray-900 rounded p-2 space-y-1">
+                                    {rows.map(({ label, value }) => (
+                                      <div key={label} className="flex gap-2">
+                                        <span className="font-semibold text-gray-500 dark:text-gray-400 w-16 shrink-0">{label}:</span>
+                                        <span className="text-gray-800 dark:text-gray-200 break-all">{value}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : null;
+                              })()}
+                              {/* Body / Content */}
+                              {(() => {
+                                const body = item.metadata?.draft_body || item.content || item.metadata?.body || "";
+                                return body ? (
+                                  <div>
+                                    <p className="font-semibold text-gray-500 dark:text-gray-400 mb-1">Message:</p>
+                                    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded p-2 text-gray-700 dark:text-gray-300 whitespace-pre-wrap max-h-[200px] overflow-y-auto">
+                                      {body}
+                                    </div>
+                                  </div>
+                                ) : null;
+                              })()}
                             </div>
                           )}
 
