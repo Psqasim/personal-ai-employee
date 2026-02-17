@@ -62,20 +62,21 @@ def process_approval(file_path: str, approval_type: str) -> bool:
                 # Log MCP action
                 _log_mcp_action(draft, result, file_path)
 
-                # Move to Done on success
+                # Move to Done on success, Needs_Action on failure
                 if result.get("success"):
                     _move_to_done(file_path, status="sent")
+                    # Only mark processed on success (file is gone from Approved)
+                    _mark_processed(file_path)
                 else:
+                    # Move file out of Approved so it doesn't loop as "already processed"
                     _move_to_needs_action(file_path, result.get("error", "Unknown error"))
+                    # Do NOT mark processed — keeps it retriable after fix
 
             elif approval_type == "plan":
                 # Plan execution handled by plan_executor.py
                 print(f"[approval_watcher] Plan approval detected: {file_path}")
                 # This would trigger Ralph Wiggum loop via plan_watcher.py
                 return True
-
-            # Mark as processed
-            _mark_processed(file_path)
 
             return True
 
@@ -276,7 +277,14 @@ def _move_to_needs_action(file_path: str, error_message: str):
     file_path_obj = Path(file_path)
     dest_path = needs_action_dir / f"retry_{file_path_obj.name}"
 
-    # Create escalation file with error details
+    # Copy original content + error details to retry file
+    original_content = ""
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            original_content = f.read()
+    except Exception:
+        pass
+
     with open(dest_path, 'w', encoding='utf-8') as f:
         f.write(f"""---
 original_file: {file_path}
@@ -290,11 +298,20 @@ timestamp: {datetime.now().isoformat()}
 **Error**: {error_message}
 **Timestamp**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
+## Original Content
+{original_content}
+
 ## Recovery Actions
 1. Check MCP server logs for details
 2. Verify MCP server configuration in .env
 3. Retry manually or move back to vault/Approved/
 """)
+
+    # Remove original from Approved so it doesn't get reprocessed
+    try:
+        file_path_obj.unlink()
+    except Exception as e:
+        print(f"[approval_watcher] Warning: could not remove original {file_path}: {e}")
 
 
 def _is_processed(file_path: str) -> bool:
