@@ -111,6 +111,9 @@ class ApprovalHandler:
         for file_path, draft_type in pending:
             logger.info(f"Processing {draft_type}: {file_path.name}")
             try:
+                # Parse frontmatter BEFORE process_approval() moves the file
+                frontmatter = parse_frontmatter(str(file_path)) or {}
+
                 ok = process_approval(str(file_path), draft_type)
                 if ok:
                     success_count += 1
@@ -120,10 +123,9 @@ class ApprovalHandler:
 
                     # WhatsApp confirmation after successful send
                     if draft_type in ("email", "whatsapp"):
-                        frontmatter = parse_frontmatter(str(file_path)) or {}
                         notify_task_completed(
                             task_type=draft_type.capitalize(),
-                            recipient=frontmatter.get("to", "Unknown"),
+                            recipient=frontmatter.get("to", frontmatter.get("chat_id", "Unknown")),
                             subject=frontmatter.get("subject")
                         )
                 else:
