@@ -141,17 +141,25 @@ def parse_frontmatter(file_path: str) -> tuple[Dict[str, Any], str]:
     if not content.startswith('---\n'):
         return {}, content
 
-    # Find closing delimiter
+    # Find closing delimiter — try all variants
     end_index = content.find('\n---\n', 4)
+    body_offset = 5  # len('\n---\n')
+
     if end_index == -1:
-        # Try alternate delimiter format (---\r\n on Windows)
-        end_index = content.find('\r\n---\r\n', 4)
-        if end_index == -1:
+        # File ends with ---\n (no content after) or ---<EOF>
+        stripped = content.rstrip()
+        if stripped.endswith('\n---'):
+            end_index = stripped.rfind('\n---')
+            body_offset = len('\n---')
+        elif content.find('\r\n---\r\n', 4) != -1:
+            end_index = content.find('\r\n---\r\n', 4)
+            body_offset = 7  # len('\r\n---\r\n')
+        else:
             return {}, content
 
     # Extract frontmatter and body
     frontmatter_text = content[4:end_index]
-    body = content[end_index + 5:].strip()
+    body = content[end_index + body_offset:].strip()
 
     # Parse YAML
     try:
@@ -356,21 +364,39 @@ def parse_email_from_vault(file_path: str) -> Optional[Dict[str, Any]]:
 
     Returns:
         Dict with keys: email_id, from, subject, body, priority, received_at
-        or None if parsing fails
+        or None if parsing fails (logs the actual error)
     """
+    import logging
+    _log = logging.getLogger(__name__)
+
     try:
         frontmatter, body = parse_frontmatter(file_path)
 
+        # If frontmatter is empty but we have content, try raw line parse
+        if not frontmatter:
+            _log.warning(f"parse_email_from_vault: empty frontmatter in {file_path}")
+
+        # Safely coerce 'from' field (may contain angle brackets or be a complex string)
+        sender = frontmatter.get("from", "")
+        if not isinstance(sender, str):
+            sender = str(sender)
+
+        # Body may be empty for short/notification emails — use subject as fallback
+        email_body = (body or "").strip()
+        if not email_body:
+            email_body = frontmatter.get("subject", "(no body)")
+
         return {
-            "email_id": frontmatter.get("email_id", Path(file_path).stem),
-            "from": frontmatter.get("from", ""),
-            "subject": frontmatter.get("subject", "(no subject)"),
-            "body": body or frontmatter.get("body", ""),
-            "priority": frontmatter.get("priority", "Normal"),
+            "email_id": str(frontmatter.get("email_id", Path(file_path).stem)),
+            "from": sender,
+            "subject": str(frontmatter.get("subject", "(no subject)")),
+            "body": email_body,
+            "priority": str(frontmatter.get("priority", "Normal")),
             "received_at": str(frontmatter.get("received_at", "")),
-            "status": frontmatter.get("status", "new"),
+            "status": str(frontmatter.get("status", "new")),
         }
     except Exception as e:
+        _log.error(f"parse_email_from_vault failed for {file_path}: {type(e).__name__}: {e}")
         return None
 
 
