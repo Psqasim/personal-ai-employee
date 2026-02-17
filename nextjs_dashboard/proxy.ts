@@ -1,9 +1,6 @@
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 
-// Force Node.js runtime to avoid Edge Runtime restrictions
-export const runtime = "nodejs";
-
 export default auth((req) => {
   const { pathname } = req.nextUrl;
 
