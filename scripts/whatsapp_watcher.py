@@ -2,9 +2,12 @@
 """
 WhatsApp Watcher - Platinum Tier Auto-Reply Bot
 
-ONE browser session per 30s cycle:
-  open → click first 5 chats → read incoming msg → send reply (still in chat) → close
+3-phase cycle every 30s:
+  Phase 1 (browser): open → read all chats → close
+  Phase 2 (no browser): generate Claude replies
+  Phase 3 (browser): open → send all replies → close
 
+Splitting avoids browser crash while Claude API is running (30-60s).
 Runs as PM2 locally OR on Oracle Cloud (headless=True on Linux server).
 Enable: ENABLE_WHATSAPP_WATCHER=true in .env
 
@@ -65,20 +68,24 @@ def generate_reply(sender: str, message: str) -> str:
         client = anthropic.Anthropic(api_key=os.getenv("CLAUDE_API_KEY"))
         resp = client.messages.create(
             model=CLAUDE_MODEL,
-            max_tokens=150,
+            max_tokens=200,
+            system=(
+                "You are Qasim's personal AI assistant managing his WhatsApp. "
+                "Qasim is a software engineer and AI developer working on automation projects. "
+                "Reply naturally and helpfully in the SAME language as the incoming message. "
+                "Keep replies short (1-3 sentences). Be warm and conversational. "
+                "If asked what Qasim is doing, say he is working on AI automation projects. "
+                "If urgent, acknowledge it. Always sign off: '— Qasim's Assistant'"
+            ),
             messages=[{
                 "role": "user",
-                "content": (
-                    f"You are Qasim's AI assistant. '{sender}' sent:\n\"{message}\"\n\n"
-                    "Write a short friendly reply in the same language (max 2 sentences). "
-                    "Sign off: '— Qasim's Assistant'"
-                )
+                "content": f"Message from '{sender}': \"{message}\"\n\nReply on Qasim's behalf:"
             }]
         )
         return resp.content[0].text.strip()
     except Exception as e:
         logger.warning(f"Claude API error: {e}")
-        return "Thanks for your message! Qasim will reply soon. — Qasim's Assistant"
+        return "Qasim is currently busy with work. He'll get back to you soon! — Qasim's Assistant"
 
 
 def is_urgent(text: str) -> bool:
@@ -113,96 +120,103 @@ def log_action(sender: str, msg: str, reply: str, urgent: bool, sent: bool):
         pass
 
 
+# ── Browser helpers ───────────────────────────────────────────────────────────
+def _make_browser(p):
+    """Launch a fresh persistent context (closes after each phase)."""
+    return p.chromium.launch_persistent_context(
+        user_data_dir=SESSION_PATH,
+        headless=HEADLESS,
+        args=["--no-sandbox", "--disable-dev-shm-usage",
+              "--window-size=1,1", "--window-position=0,0"],
+        viewport={"width": 1280, "height": 800},
+    )
+
+
+def _wait_for_whatsapp(page) -> bool:
+    """Navigate to WhatsApp Web and wait for chat list. Returns False if QR shown."""
+    page.goto("https://web.whatsapp.com", wait_until="domcontentloaded", timeout=30000)
+    page.wait_for_timeout(4000)
+    page.wait_for_selector(f'{CHAT_LIST}, {QR_CODE}', timeout=60000)
+    if page.locator(QR_CODE).count() > 0:
+        logger.error("QR shown — re-run setup_whatsapp_session.py")
+        return False
+    page.wait_for_timeout(2000)
+    return True
+
+
+def _read_sender(page, i: int) -> str:
+    sender = f"Chat_{i+1}"
+    for sel in [
+        'header span[dir="auto"]',
+        'div[data-testid="conversation-info-header"] span[dir="auto"]',
+        'span[data-testid="conversation-info-header-chat-title"]',
+    ]:
+        el = page.locator(sel)
+        if el.count() > 0:
+            t = el.first.inner_text().strip()
+            if t:
+                return t
+    return sender
+
+
+def _read_last_msg(page) -> str:
+    for msg_sel in [
+        'div.message-in span.selectable-text',
+        'div[class*="message-in"] span.selectable-text',
+        'div[class*="message-in"] span[dir="ltr"]',
+        'div[class*="message-in"] span[dir="rtl"]',
+        'div[data-testid="msg-container"] span.selectable-text',
+    ]:
+        els = page.locator(msg_sel).all()
+        if els:
+            try:
+                t = els[-1].inner_text().strip()
+                if t:
+                    return t
+            except Exception:
+                continue
+    return ""
+
+
 # ── Core cycle ───────────────────────────────────────────────────────────────
 def run_cycle():
     """
-    Open ONE browser session:
-    1. Click each of first N chats
-    2. Read last incoming message (div.message-in)
-    3. Generate Claude reply
-    4. Send reply WHILE STILL IN THAT CHAT (no search needed)
-    5. Move to next chat
-    6. Close browser
+    3-phase cycle — browser is closed before Claude API is called,
+    so long API calls never crash the browser:
+
+    Phase 1 (browser open):  Read messages from first N chats → close browser
+    Phase 2 (no browser):    Generate Claude replies for each message
+    Phase 3 (browser open):  Send each reply in the correct chat → close browser
     """
     if not os.path.isdir(SESSION_PATH):
         logger.error(f"Session missing: {SESSION_PATH} — run setup_whatsapp_session.py")
         return
 
+    # ── Phase 1: Read ─────────────────────────────────────────────────────────
+    inbox: list[tuple[str, str]] = []   # (sender, last_msg)
+
     with sync_playwright() as p:
-        context = p.chromium.launch_persistent_context(
-            user_data_dir=SESSION_PATH,
-            headless=HEADLESS,
-            args=[
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--window-size=1,1",
-                "--window-position=0,0",
-            ],
-            viewport={"width": 1280, "height": 800},
-        )
-        page = context.new_page()
-
+        ctx = _make_browser(p)
+        page = ctx.new_page()
         try:
-            page.goto("https://web.whatsapp.com", wait_until="domcontentloaded", timeout=30000)
-            page.wait_for_timeout(4000)
-            page.wait_for_selector(f'{CHAT_LIST}, {QR_CODE}', timeout=60000)
-
-            if page.locator(QR_CODE).count() > 0:
-                logger.error("QR shown — re-run setup_whatsapp_session.py")
-                context.close()
+            if not _wait_for_whatsapp(page):
+                ctx.close()
                 return
 
-            page.wait_for_timeout(2000)
-
-            # Get chat list rows
             rows = page.locator('div[aria-label="Chat list"] > div').all()
             if not rows:
                 rows = page.locator('#pane-side > div > div > div').all()
-
             logger.info(f"Found {len(rows)} chats, checking first {CHATS_TO_CHECK}")
 
             for i, row in enumerate(rows[:CHATS_TO_CHECK]):
                 try:
-                    # ── Click chat to open it ─────────────────────────
                     row.click()
                     page.wait_for_timeout(2000)
-
-                    # ── Get sender name from conversation header ───────
-                    sender = f"Chat_{i+1}"
-                    for sel in [
-                        'header span[dir="auto"]',
-                        'div[data-testid="conversation-info-header"] span[dir="auto"]',
-                        'span[data-testid="conversation-info-header-chat-title"]',
-                    ]:
-                        el = page.locator(sel)
-                        if el.count() > 0:
-                            t = el.first.inner_text().strip()
-                            if t:
-                                sender = t
-                                break
-
-                    # ── Get last incoming message ──────────────────────
-                    # Try multiple selectors — WhatsApp Web changes frequently
-                    last_msg = ""
-                    for msg_sel in [
-                        'div.message-in span.selectable-text',
-                        'div[class*="message-in"] span.selectable-text',
-                        'div[class*="message-in"] span[dir="ltr"]',
-                        'div[class*="message-in"] span[dir="rtl"]',
-                        # Fallback: last message in conversation regardless of direction
-                        'div[data-testid="msg-container"] span.selectable-text',
-                    ]:
-                        els = page.locator(msg_sel).all()
-                        if els:
-                            try:
-                                last_msg = els[-1].inner_text().strip()
-                                if last_msg:
-                                    break
-                            except Exception:
-                                continue
+                    sender   = _read_sender(page, i)
+                    last_msg = _read_last_msg(page)
 
                     if not last_msg:
-                        logger.debug(f"No incoming msg in chat {sender}")
+                        logger.debug(f"No incoming msg in {sender}")
                         continue
 
                     cache_key = f"{sender}:{last_msg[:50]}"
@@ -211,43 +225,82 @@ def run_cycle():
                         continue
 
                     logger.info(f"📩 {sender}: {last_msg[:70]}")
+                    inbox.append((sender, last_msg))
+
                     urgent = is_urgent(last_msg)
                     if urgent:
                         logger.warning(f"🚨 URGENT from {sender}!")
                         notify_admin(sender, last_msg)
-
-                    # ── Generate reply ────────────────────────────────
-                    reply = generate_reply(sender, last_msg)
-                    logger.info(f"💬 Reply: {reply[:60]}")
-
-                    # ── Send reply — we're ALREADY in this chat! ──────
-                    # Just fill the message input and press Enter
-                    sent = False
-                    try:
-                        msg_box = page.wait_for_selector(MSG_INPUT, timeout=8000)
-                        msg_box.click()
-                        msg_box.fill(reply)
-                        page.wait_for_timeout(500)
-                        page.keyboard.press("Enter")
-                        page.wait_for_timeout(2000)
-                        sent = True
-                        logger.info(f"✅ Sent to {sender}")
-                    except Exception as e:
-                        logger.warning(f"⚠️ Send failed to {sender}: {e}")
-
-                    _replied_cache.add(cache_key)
-                    log_action(sender, last_msg, reply, urgent, sent)
-
                 except Exception as e:
-                    logger.debug(f"Chat {i} error: {e}")
-                    continue
+                    logger.debug(f"Read error chat {i}: {e}")
 
-        except PlaywrightTimeout as e:
-            logger.warning(f"Timeout: {e}")
-        except Exception as e:
-            logger.error(f"Cycle error: {e}")
+        except (PlaywrightTimeout, Exception) as e:
+            logger.warning(f"Phase-1 error: {e}")
         finally:
-            context.close()
+            ctx.close()   # ← browser fully closed before API calls
+
+    if not inbox:
+        return
+
+    # ── Phase 2: Generate replies (no browser open) ───────────────────────────
+    pending: list[tuple[str, str, str]] = []   # (sender, last_msg, reply)
+    for sender, last_msg in inbox:
+        reply = generate_reply(sender, last_msg)
+        logger.info(f"💬 {sender} → {reply[:60]}")
+        pending.append((sender, last_msg, reply))
+
+    # ── Phase 3: Send ─────────────────────────────────────────────────────────
+    with sync_playwright() as p:
+        ctx = _make_browser(p)
+        page = ctx.new_page()
+        try:
+            if not _wait_for_whatsapp(page):
+                ctx.close()
+                return
+
+            rows = page.locator('div[aria-label="Chat list"] > div').all()
+            if not rows:
+                rows = page.locator('#pane-side > div > div > div').all()
+
+            # Build a name→row index map (first CHATS_TO_CHECK rows)
+            row_map: dict[str, int] = {}
+            for i, row in enumerate(rows[:CHATS_TO_CHECK]):
+                try:
+                    row.click()
+                    page.wait_for_timeout(1500)
+                    name = _read_sender(page, i)
+                    row_map[name] = i
+                except Exception:
+                    pass
+
+            for sender, last_msg, reply in pending:
+                sent = False
+                try:
+                    # Click the right chat (already mapped above)
+                    idx = row_map.get(sender)
+                    if idx is not None:
+                        rows[idx].click()
+                        page.wait_for_timeout(1500)
+
+                    msg_box = page.wait_for_selector(MSG_INPUT, timeout=8000)
+                    msg_box.click()
+                    msg_box.fill(reply)
+                    page.wait_for_timeout(500)
+                    page.keyboard.press("Enter")
+                    page.wait_for_timeout(2000)
+                    sent = True
+                    logger.info(f"✅ Sent to {sender}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Send failed to {sender}: {e}")
+
+                cache_key = f"{sender}:{last_msg[:50]}"
+                _replied_cache.add(cache_key)
+                log_action(sender, last_msg, reply, is_urgent(last_msg), sent)
+
+        except (PlaywrightTimeout, Exception) as e:
+            logger.warning(f"Phase-3 error: {e}")
+        finally:
+            ctx.close()
 
     if len(_replied_cache) > 500:
         _replied_cache.clear()
