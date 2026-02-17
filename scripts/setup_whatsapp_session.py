@@ -54,32 +54,54 @@ print("Opening WhatsApp Web — a browser window will appear.")
 print("Scan the QR code with your phone:")
 print("  WhatsApp → Linked Devices → Link a Device\n")
 
+# Use launch_persistent_context — preserves IndexedDB, ServiceWorkers, cookies.
+# storage_state JSON only saves cookies/localStorage, which is not enough for
+# WhatsApp's end-to-end encryption keys stored in IndexedDB.
+print(f"Session directory: {session_path}")
+
 with sync_playwright() as p:
-    # Must be headed (visible) for QR scan
-    browser = p.chromium.launch(headless=False, slow_mo=500)
-    context = browser.new_context()
+    context = p.chromium.launch_persistent_context(
+        user_data_dir=session_path,
+        headless=False,
+        args=["--no-sandbox", "--disable-dev-shm-usage"],
+        slow_mo=300,
+        viewport={"width": 1280, "height": 800},
+    )
     page = context.new_page()
 
     print("Loading WhatsApp Web...")
     page.goto("https://web.whatsapp.com", wait_until="domcontentloaded")
 
     print("Waiting for QR code... (scan it now with your phone)")
-    print("You have 90 seconds.")
+    print("You have 120 seconds.\n")
 
     try:
-        # Wait for chat panel = logged in
-        page.wait_for_selector(
-            'div[data-testid="conversation-panel-wrapper"]',
-            timeout=90000
-        )
-        print("\n✅ Authenticated! Saving session...")
-        context.storage_state(path=session_path)
-        print(f"✅ Session saved to: {session_path}")
-        print("\nYou can now send WhatsApp messages via the dashboard.")
-        print("Run: pm2 restart local_approval_handler")
+        logged_in = False
+        selectors_to_try = [
+            'div[aria-label="Chat list"]',
+            'div[data-testid="chat-list"]',
+            '#pane-side',
+        ]
+        for sel in selectors_to_try:
+            try:
+                page.wait_for_selector(sel, timeout=120000)
+                logged_in = True
+                print(f"\n✅ Logged in detected via: {sel}")
+                break
+            except Exception:
+                print(f"   selector {sel!r} not found, trying next...")
 
-    except Exception:
-        print("\n❌ Timed out or authentication failed.")
-        print("Try again and scan the QR code faster.")
+        if logged_in:
+            import time
+            time.sleep(2)  # Let page settle so all data is written to user_data_dir
+            print(f"✅ Session saved to directory: {session_path}")
+            print("\nYou can now send WhatsApp messages via the dashboard.")
+            print("Run: pm2 restart local_approval_handler")
+        else:
+            print("\n❌ Could not detect logged-in state. Try again.")
 
-    browser.close()
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+        print("Try again.")
+
+    context.close()

@@ -84,7 +84,7 @@ def _send_in_thread(message: str, label: str) -> None:
     def _send():
         try:
             from agent_skills.mcp_client import get_mcp_client
-            client = get_mcp_client(timeout=10)  # Fail fast; fallback to vault log
+            client = get_mcp_client(timeout=150)  # Headed browser: 30s load + 90s WA init
             result = client.call_tool(
                 mcp_server="whatsapp-mcp",
                 tool_name="send_message",

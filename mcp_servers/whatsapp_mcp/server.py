@@ -21,8 +21,10 @@ from typing import Dict, Any
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
 
-# WhatsApp Web selectors (as of 2026-01)
+# WhatsApp Web selectors (as of 2026-02)
 SELECTORS = {
+    # Login confirmation — chat list sidebar (matches setup_whatsapp_session.py)
+    "LOGGED_IN": 'div[aria-label="Chat list"], #pane-side, div[data-testid="chat-list"]',
     "SEARCH_BOX": 'div[contenteditable="true"][data-tab="3"]',
     "MESSAGE_INPUT": 'div[contenteditable="true"][data-tab="10"]',
     "SEND_BUTTON": 'button[data-tab="11"]',
@@ -85,18 +87,43 @@ def send_message(chat_id: str, message: str) -> Dict[str, Any]:
     """
     session_path = os.getenv("WHATSAPP_SESSION_PATH")
 
-    if not session_path or not os.path.exists(session_path):
-        raise Exception("SESSION_EXPIRED: WhatsApp session not found or expired")
+    # Session path must be a directory (launch_persistent_context userDataDir)
+    if not session_path or not os.path.isdir(session_path):
+        raise Exception("SESSION_EXPIRED: WhatsApp session directory not found — run setup_whatsapp_session.py")
 
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)  # Headless for automated sends
-            context = browser.new_context(storage_state=session_path)
+            # Use launch_persistent_context — preserves IndexedDB + ServiceWorkers
+            # (storage_state JSON only saves cookies/localStorage, not enough for WhatsApp)
+            # WSL2: headless=True hangs; headed via WSLg display works.
+            context = p.chromium.launch_persistent_context(
+                user_data_dir=session_path,
+                headless=False,
+                args=[
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--window-size=1,1",
+                    "--window-position=0,0",
+                ],
+                viewport={"width": 1280, "height": 800},
+            )
             page = context.new_page()
-            page.goto('https://web.whatsapp.com', wait_until='networkidle')
 
-            # Wait for chat panel (confirms session valid) - increased timeout for headless mode
-            page.wait_for_selector(SELECTORS["CONVERSATION_PANEL"], timeout=60000)
+            # domcontentloaded fires fast; WhatsApp JS needs extra time to render UI
+            page.goto('https://web.whatsapp.com', wait_until='domcontentloaded', timeout=30000)
+            page.wait_for_timeout(3000)  # Let WhatsApp JS initialize
+
+            # Wait for logged-in state OR QR code
+            try:
+                page.wait_for_selector(
+                    f'{SELECTORS["LOGGED_IN"]}, {SELECTORS["QR_CODE"]}',
+                    timeout=90000
+                )
+            except PlaywrightTimeout:
+                raise Exception("LOAD_TIMEOUT: WhatsApp Web did not load within 90s")
+
+            if page.locator(SELECTORS["QR_CODE"]).count() > 0:
+                raise Exception("SESSION_EXPIRED: QR code detected — re-run setup_whatsapp_session.py")
 
             # Search for contact
             search_box = page.wait_for_selector(SELECTORS["SEARCH_BOX"], timeout=15000)
@@ -109,10 +136,10 @@ def send_message(chat_id: str, message: str) -> Dict[str, Any]:
             message_input.fill(message)
             page.click(SELECTORS["SEND_BUTTON"])
 
-            # Confirm sent (wait for message to appear in chat)
-            page.wait_for_timeout(2000)  # Wait for send confirmation
+            # Wait for send confirmation
+            page.wait_for_timeout(2000)
 
-            browser.close()
+            context.close()  # persistent context — no separate browser object
 
             message_id = f"msg_{int(datetime.now().timestamp())}"
             sent_at = datetime.now().isoformat()
