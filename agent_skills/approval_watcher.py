@@ -249,12 +249,15 @@ error_message: {result.get('error', 'null')}
 
 
 def _move_to_done(file_path: str, status: str = "sent"):
-    """Move approved file to vault/Done/ on success"""
+    """Move approved file to vault/Done/{subfolder}/ on success"""
     vault_path = Path(os.getenv("VAULT_PATH", "vault"))
-    done_dir = vault_path / "Done"
-    done_dir.mkdir(parents=True, exist_ok=True)
 
     file_path_obj = Path(file_path)
+    # Preserve subfolder: vault/Approved/Email/ → vault/Done/Email/
+    subfolder = file_path_obj.parent.name  # e.g. "Email", "WhatsApp", "LinkedIn"
+    done_dir = vault_path / "Done" / subfolder
+    done_dir.mkdir(parents=True, exist_ok=True)
+
     dest_path = done_dir / file_path_obj.name
 
     # Log file movement (T051)
