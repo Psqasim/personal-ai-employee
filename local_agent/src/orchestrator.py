@@ -51,23 +51,16 @@ class LocalOrchestrator:
 
     def process_approvals(self):
         """
-        Process vault/Approved/ for user-approved drafts
-        Execute MCP send actions
+        Process vault/Approved/ for user-approved drafts.
+        Routes to correct executor based on subfolder type.
         """
         logger.debug("Processing approvals...")
 
-        approved_path = Path(self.vault_path) / "Approved"
-        if not approved_path.exists():
-            return
-
-        # TODO: Implement approval processing
-        # 1. Scan vault/Approved/Email/ for approved email drafts
-        # 2. Invoke Email MCP to send
-        # 3. Move to vault/Done/
-        # 4. Log MCP action
-        # 5. Update Dashboard.md
-
-        pass
+        from local_agent.src.approval_handler import ApprovalHandler
+        handler = ApprovalHandler(self.vault_path, self.agent_id)
+        count = handler.run_once()
+        if count:
+            logger.info(f"✅ Processed {count} approval(s)")
 
     def monitor_needs_action(self):
         """

@@ -347,6 +347,33 @@ def detect_draft_type(file_path: str) -> Optional[str]:
     return None
 
 
+def parse_email_from_vault(file_path: str) -> Optional[Dict[str, Any]]:
+    """
+    Parse an EMAIL_*.md file from vault/Inbox/ into a flat email dict.
+
+    Args:
+        file_path: Absolute path to EMAIL_*.md file
+
+    Returns:
+        Dict with keys: email_id, from, subject, body, priority, received_at
+        or None if parsing fails
+    """
+    try:
+        frontmatter, body = parse_frontmatter(file_path)
+
+        return {
+            "email_id": frontmatter.get("email_id", Path(file_path).stem),
+            "from": frontmatter.get("from", ""),
+            "subject": frontmatter.get("subject", "(no subject)"),
+            "body": body or frontmatter.get("body", ""),
+            "priority": frontmatter.get("priority", "Normal"),
+            "received_at": str(frontmatter.get("received_at", "")),
+            "status": frontmatter.get("status", "new"),
+        }
+    except Exception as e:
+        return None
+
+
 # Example usage
 if __name__ == "__main__":
     # Example: Parse email draft

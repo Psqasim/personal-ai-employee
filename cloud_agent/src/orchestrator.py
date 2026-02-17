@@ -47,6 +47,10 @@ class CloudOrchestrator:
         self.sync_state_mgr = GitSyncStateManager(self.vault_path)
         self.api_tracker = APIUsageTracker(self.vault_path, self.agent_id)
 
+        # Gmail watcher (polls on each orchestration cycle)
+        from cloud_agent.src.watchers.gmail_watcher import CloudGmailWatcher
+        self.gmail_watcher = CloudGmailWatcher(self.vault_path)
+
         logger.info("Cloud Orchestrator initialized")
 
     def process_inbox(self):
@@ -163,19 +167,35 @@ class CloudOrchestrator:
 
         pass
 
+    def poll_gmail(self):
+        """
+        Poll Gmail for new emails and write to vault/Inbox/.
+        Called every orchestration cycle (default: 5 min for orchestrator,
+        but gmail_watcher.py can also run as a separate PM2 process at 60s).
+        """
+        try:
+            count = self.gmail_watcher.poll_once()
+            if count:
+                logger.info(f"📬 Gmail poll: {count} new email(s) added to inbox")
+        except Exception as e:
+            logger.error(f"Gmail poll error: {e}")
+
     def orchestration_cycle(self):
         """
         Single orchestration cycle
         Run all Cloud Agent tasks
         """
         try:
-            # Email triage and drafting
+            # 1. Poll Gmail for new emails
+            self.poll_gmail()
+
+            # 2. Process inbox → generate drafts
             self.process_inbox()
 
-            # Social media draft generation
+            # 3. Social media draft generation
             self.generate_social_drafts()
 
-            # WhatsApp notifications
+            # 4. WhatsApp notifications
             self.send_notifications()
 
             logger.debug("Orchestration cycle complete")
