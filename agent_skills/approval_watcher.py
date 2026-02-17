@@ -117,18 +117,36 @@ def _invoke_mcp_for_draft(draft: Any, draft_type: str) -> Dict[str, Any]:
             return {"success": True, "result": result, "error": None}
 
         elif draft_type == "whatsapp":
-            # Invoke whatsapp-mcp send_message tool
-            result = mcp_client.call_tool(
-                mcp_server="whatsapp-mcp",
-                tool_name="send_message",
-                arguments={
-                    "chat_id": draft.chat_id,
-                    "message": draft.draft_body
-                },
-                retry_count=3,
-                retry_delay=5
-            )
-            return {"success": True, "result": result, "error": None}
+            # Invoke whatsapp-mcp with a short timeout in a thread to avoid blocking
+            import threading
+            whatsapp_client = get_mcp_client(timeout=60)  # 60s max, not 180s
+            result_holder = {}
+
+            def _send():
+                try:
+                    r = whatsapp_client.call_tool(
+                        mcp_server="whatsapp-mcp",
+                        tool_name="send_message",
+                        arguments={
+                            "chat_id": draft.chat_id,
+                            "message": draft.draft_body
+                        },
+                        retry_count=1,
+                        retry_delay=2
+                    )
+                    result_holder["result"] = r
+                except Exception as e:
+                    result_holder["error"] = str(e)
+
+            t = threading.Thread(target=_send, daemon=True)
+            t.start()
+            t.join(timeout=65)  # 65s hard wall-clock limit
+
+            if t.is_alive():
+                return {"success": False, "result": None, "error": "WhatsApp MCP timeout (65s) — session may be expired"}
+            if "error" in result_holder:
+                return {"success": False, "result": None, "error": result_holder["error"]}
+            return {"success": True, "result": result_holder.get("result", {}), "error": None}
 
         elif draft_type == "linkedin":
             # Invoke linkedin-mcp create_post tool
