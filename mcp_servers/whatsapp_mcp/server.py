@@ -157,16 +157,114 @@ def send_message(chat_id: str, message: str) -> Dict[str, Any]:
 
 def get_messages(limit: int = 10) -> Dict[str, Any]:
     """
-    Read unread WhatsApp messages via Playwright.
+    Read unread WhatsApp messages via Playwright (read-only, no reply).
+    Uses ONE browser session to avoid Chrome user-data-dir lock conflicts.
 
     Returns:
         Dict with list of {sender, message, timestamp, is_unread}
     """
     session_path = os.getenv("WHATSAPP_SESSION_PATH")
-
     if not session_path or not os.path.isdir(session_path):
         raise Exception("SESSION_EXPIRED: WhatsApp session directory not found")
 
+    messages = []
+    try:
+        with sync_playwright() as p:
+            context = p.chromium.launch_persistent_context(
+                user_data_dir=session_path,
+                headless=False,
+                args=["--no-sandbox", "--disable-dev-shm-usage",
+                      "--window-size=1,1", "--window-position=0,0"],
+                viewport={"width": 1280, "height": 800},
+            )
+            page = context.new_page()
+            page.goto('https://web.whatsapp.com', wait_until='domcontentloaded', timeout=30000)
+            page.wait_for_timeout(4000)
+
+            page.wait_for_selector(
+                f'{SELECTORS["LOGGED_IN"]}, {SELECTORS["QR_CODE"]}',
+                timeout=90000
+            )
+            if page.locator(SELECTORS["QR_CODE"]).count() > 0:
+                raise Exception("SESSION_EXPIRED: QR code detected")
+
+            page.wait_for_timeout(2000)
+
+            # Find unread chats via unread badge (multiple selector fallbacks)
+            unread_badge_sel = (
+                '[data-testid="icon-unread-count"], '
+                'span[aria-label*="unread message"], '
+                'span[aria-label*="unread"]'
+            )
+            badges = page.locator(unread_badge_sel).all()
+
+            for badge in badges[:limit]:
+                try:
+                    # Navigate up to the chat list item and click it
+                    chat_item = badge.locator('xpath=ancestor::div[@role="listitem" or @data-testid="cell-frame-container"][1]')
+                    if chat_item.count() == 0:
+                        chat_item = badge.locator('xpath=ancestor::div[contains(@class,"focusable-list-item")][1]')
+
+                    # Get sender name from title span
+                    sender = "Unknown"
+                    title_el = page.locator(f'span[title]:near({badge}, 200)')
+                    if title_el.count() > 0:
+                        sender = title_el.first.get_attribute('title') or "Unknown"
+
+                    # Click to open chat
+                    badge.click()
+                    page.wait_for_timeout(2000)
+
+                    # Read last incoming message text
+                    incoming = page.locator(
+                        'div.message-in span.selectable-text, '
+                        'div[data-testid="msg-container"] span.selectable-text'
+                    ).all()
+
+                    text_parts = []
+                    for el in incoming[-3:]:
+                        try:
+                            t = el.inner_text().strip()
+                            if t:
+                                text_parts.append(t)
+                        except Exception:
+                            pass
+
+                    if text_parts:
+                        messages.append({
+                            "sender": sender,
+                            "message": " | ".join(text_parts),
+                            "timestamp": datetime.now().isoformat(),
+                            "is_unread": True
+                        })
+                except Exception:
+                    continue
+
+            context.close()
+            return {"messages": messages, "count": len(messages)}
+
+    except Exception as e:
+        raise Exception(f"GET_MESSAGES_FAILED: {e}")
+
+
+def process_inbox(replies: Dict[str, str]) -> Dict[str, Any]:
+    """
+    Read unread messages AND send replies in ONE browser session.
+    This avoids Chrome user-data-dir lock conflicts from two separate
+    browser opens (get_messages + send_message).
+
+    Args:
+        replies: {sender_name: reply_text} mapping
+
+    Returns:
+        Dict with sent list and failed list
+    """
+    session_path = os.getenv("WHATSAPP_SESSION_PATH")
+    if not session_path or not os.path.isdir(session_path):
+        raise Exception("SESSION_EXPIRED: WhatsApp session directory not found")
+
+    sent = []
+    failed = []
     messages = []
 
     try:
@@ -180,76 +278,83 @@ def get_messages(limit: int = 10) -> Dict[str, Any]:
             )
             page = context.new_page()
             page.goto('https://web.whatsapp.com', wait_until='domcontentloaded', timeout=30000)
-            page.wait_for_timeout(3000)
+            page.wait_for_timeout(4000)
 
             page.wait_for_selector(
                 f'{SELECTORS["LOGGED_IN"]}, {SELECTORS["QR_CODE"]}',
                 timeout=90000
             )
-
             if page.locator(SELECTORS["QR_CODE"]).count() > 0:
                 raise Exception("SESSION_EXPIRED: QR code detected")
 
-            # Wait for chat list to fully load
             page.wait_for_timeout(2000)
 
-            # Find all unread chats (have unread badge)
-            unread_chats = page.locator(
-                'div[aria-label="Chat list"] div[role="listitem"]'
-            ).all()
+            # ── Step 1: Read all unread messages ─────────────────────
+            unread_badge_sel = (
+                '[data-testid="icon-unread-count"], '
+                'span[aria-label*="unread message"], '
+                'span[aria-label*="unread"]'
+            )
+            badges = page.locator(unread_badge_sel).all()
 
-            checked = 0
-            for chat in unread_chats[:limit]:
-                if checked >= limit:
-                    break
+            for badge in badges[:10]:
+                try:
+                    sender = "Unknown"
+                    title_el = page.locator(f'span[title]:near({badge}, 200)')
+                    if title_el.count() > 0:
+                        sender = title_el.first.get_attribute('title') or "Unknown"
 
-                # Check if has unread count badge
-                badge = chat.locator('span[aria-label*="unread"], span[data-testid="icon-unread-count"]')
-                if badge.count() == 0:
-                    continue
+                    badge.click()
+                    page.wait_for_timeout(2000)
 
-                # Get sender name
-                sender_el = chat.locator('span[title]')
-                sender = sender_el.first.get_attribute('title') if sender_el.count() > 0 else "Unknown"
-
-                # Click to open chat
-                chat.click()
-                page.wait_for_timeout(1500)
-
-                # Get last few messages from conversation (incoming only)
-                msg_els = page.locator(
-                    'div.message-in span.selectable-text'
-                ).all()
-
-                if not msg_els:
-                    # fallback selector
-                    msg_els = page.locator(
+                    incoming = page.locator(
+                        'div.message-in span.selectable-text, '
                         'div[data-testid="msg-container"] span.selectable-text'
                     ).all()
+                    text_parts = []
+                    for el in incoming[-3:]:
+                        try:
+                            t = el.inner_text().strip()
+                            if t:
+                                text_parts.append(t)
+                        except Exception:
+                            pass
 
-                last_msgs = []
-                for m in msg_els[-3:]:  # last 3 incoming messages
-                    try:
-                        text = m.inner_text()
-                        if text.strip():
-                            last_msgs.append(text.strip())
-                    except Exception:
-                        pass
+                    if text_parts:
+                        messages.append({
+                            "sender": sender,
+                            "message": " | ".join(text_parts),
+                            "timestamp": datetime.now().isoformat(),
+                        })
+                except Exception:
+                    continue
 
-                if last_msgs:
-                    messages.append({
-                        "sender": sender,
-                        "message": " | ".join(last_msgs),
-                        "timestamp": datetime.now().isoformat(),
-                        "is_unread": True
-                    })
-                    checked += 1
+            # ── Step 2: Send replies in same session ──────────────────
+            for reply_to, reply_text in replies.items():
+                try:
+                    search_box = page.wait_for_selector(SELECTORS["SEARCH_BOX"], timeout=10000)
+                    search_box.fill(reply_to)
+                    page.keyboard.press('Enter')
+                    page.wait_for_timeout(2000)
+
+                    msg_input = page.wait_for_selector(SELECTORS["MESSAGE_INPUT"], timeout=10000)
+                    msg_input.fill(reply_text)
+                    page.click(SELECTORS["SEND_BUTTON"])
+                    page.wait_for_timeout(2000)
+                    sent.append(reply_to)
+                except Exception as e:
+                    failed.append({"sender": reply_to, "error": str(e)})
 
             context.close()
-            return {"messages": messages, "count": len(messages)}
+            return {
+                "messages": messages,
+                "sent": sent,
+                "failed": failed,
+                "count": len(messages)
+            }
 
     except Exception as e:
-        raise Exception(f"GET_MESSAGES_FAILED: {e}")
+        raise Exception(f"PROCESS_INBOX_FAILED: {e}")
 
 
 def tools_list() -> Dict[str, Any]:
@@ -282,6 +387,20 @@ def tools_list() -> Dict[str, Any]:
                         "limit": {"type": "integer", "description": "Max chats to check (default 10)"}
                     },
                     "required": []
+                }
+            },
+            {
+                "name": "process_inbox",
+                "description": "Read unread messages AND send replies in one browser session",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "replies": {
+                            "type": "object",
+                            "description": "Map of {sender_name: reply_text} to send"
+                        }
+                    },
+                    "required": ["replies"]
                 }
             }
         ]
@@ -332,6 +451,10 @@ def handle_request(request: Dict[str, Any]) -> Dict[str, Any]:
 
             elif tool_name == "get_messages":
                 result = get_messages(limit=arguments.get("limit", 10))
+                return {"jsonrpc": "2.0", "id": request_id, "result": result}
+
+            elif tool_name == "process_inbox":
+                result = process_inbox(replies=arguments.get("replies", {}))
                 return {"jsonrpc": "2.0", "id": request_id, "result": result}
 
             else:

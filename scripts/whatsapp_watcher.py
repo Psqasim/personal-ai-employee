@@ -58,36 +58,24 @@ def _mcp():
     return get_mcp_client(timeout=120)
 
 
-def fetch_unread() -> List[Dict]:
-    """Fetch unread messages via whatsapp-mcp get_messages."""
+def fetch_and_reply(replies: Dict[str, str]) -> Dict:
+    """
+    Read unread messages AND send replies in ONE browser session
+    via whatsapp-mcp process_inbox. Avoids Chrome lock conflicts
+    from two separate browser opens.
+    """
     try:
         r = _mcp().call_tool(
             mcp_server="whatsapp-mcp",
-            tool_name="get_messages",
-            arguments={"limit": 10},
+            tool_name="process_inbox",
+            arguments={"replies": replies},
             retry_count=1,
             retry_delay=2,
         )
-        return r.get("messages", [])
+        return r
     except Exception as e:
-        logger.warning(f"fetch_unread failed: {e}")
-        return []
-
-
-def send_whatsapp(chat_id: str, message: str) -> bool:
-    """Send reply via whatsapp-mcp send_message."""
-    try:
-        r = _mcp().call_tool(
-            mcp_server="whatsapp-mcp",
-            tool_name="send_message",
-            arguments={"chat_id": chat_id, "message": message},
-            retry_count=1,
-            retry_delay=2,
-        )
-        return bool(r.get("message_id"))
-    except Exception as e:
-        logger.warning(f"send_whatsapp failed ({chat_id}): {e}")
-        return False
+        logger.warning(f"process_inbox failed: {e}")
+        return {"messages": [], "sent": [], "failed": [], "count": 0}
 
 
 # ── AI reply ───────────────────────────────────────────────────────────────
@@ -175,13 +163,20 @@ def run():
 
     while True:
         try:
-            messages = fetch_unread()
+            # ── Step 1: First pass — read unread messages (no replies yet)
+            # We call process_inbox with empty replies to just read
+            result = fetch_and_reply({})
+            messages = result.get("messages", [])
+
             if messages:
                 logger.info(f"📬 {len(messages)} unread message(s)")
+
+            # ── Step 2: Generate replies for new messages
+            replies_to_send: Dict[str, str] = {}
             for msg in messages:
-                sender  = msg.get("sender", "Unknown")
-                text    = msg.get("message", "")
-                key     = f"{sender}:{text[:50]}"
+                sender = msg.get("sender", "Unknown")
+                text   = msg.get("message", "")
+                key    = f"{sender}:{text[:50]}"
 
                 if key in _replied_cache:
                     continue
@@ -193,17 +188,21 @@ def run():
                     notify_admin(sender, text)
 
                 reply = generate_reply(sender, text)
-                sent  = send_whatsapp(sender, reply)
-                log_action(sender, text, reply, urgent, sent)
-
-                if sent:
-                    logger.info(f"✅ Replied to {sender}")
-                else:
-                    logger.warning(f"⚠️ Reply failed to {sender}")
-
+                replies_to_send[sender] = reply
                 _replied_cache.add(key)
-                if len(_replied_cache) > 500:
-                    _replied_cache.clear()
+
+            # ── Step 3: Send all replies in ONE browser session
+            if replies_to_send:
+                logger.info(f"Sending {len(replies_to_send)} reply/replies in one session...")
+                send_result = fetch_and_reply(replies_to_send)
+                for sender in send_result.get("sent", []):
+                    logger.info(f"✅ Replied to {sender}")
+                    log_action(sender, "", replies_to_send.get(sender, ""), False, True)
+                for fail in send_result.get("failed", []):
+                    logger.warning(f"⚠️ Reply failed: {fail}")
+
+            if len(_replied_cache) > 500:
+                _replied_cache.clear()
 
         except Exception as e:
             logger.error(f"Loop error: {e}")
