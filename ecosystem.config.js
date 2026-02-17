@@ -88,6 +88,43 @@ module.exports = {
 
       pid_file: '/home/ubuntu/.pm2/pids/git_sync_cloud.pid',
     },
+
+    {
+      name: 'whatsapp_watcher',
+      script: 'scripts/whatsapp_watcher.py',
+      interpreter: 'venv/bin/python',
+      cwd: '/opt/personal-ai-employee',
+
+      env: {
+        PYTHONPATH: '/opt/personal-ai-employee',
+        PYTHONUNBUFFERED: '1',
+        ENV_FILE: '.env.cloud',
+        // Watcher-specific (cloud overrides)
+        ENABLE_WHATSAPP_WATCHER: 'true',
+        PLAYWRIGHT_HEADLESS: 'true',
+        WHATSAPP_SESSION_PATH: '/home/ubuntu/.whatsapp_session_dir',
+        WHATSAPP_POLL_INTERVAL: '30',
+        CHATS_TO_CHECK: '5',
+      },
+
+      autorestart: true,
+      max_restarts: 20,
+      min_uptime: 10000,        // 10s — browser takes time to start
+      restart_delay: 5000,      // 5s between restarts
+
+      error_file: '/home/ubuntu/.pm2/logs/whatsapp-watcher-error.log',
+      out_file: '/home/ubuntu/.pm2/logs/whatsapp-watcher-out.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss',
+      merge_logs: true,
+
+      max_memory_restart: '600M',  // Chromium is memory-hungry
+
+      exec_mode: 'fork',
+      instances: 1,
+      watch: false,
+
+      pid_file: '/home/ubuntu/.pm2/pids/whatsapp_watcher.pid',
+    },
   ],
 
   /**

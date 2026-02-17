@@ -18,7 +18,9 @@ Created: 2026-02-17
 import os
 import sys
 import time
+import fcntl
 import logging
+from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Tuple
@@ -27,7 +29,10 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from dotenv import load_dotenv
-load_dotenv(project_root / ".env")
+# Load .env first, then .env.cloud (cloud-specific vars override local defaults)
+_env_file = os.getenv("ENV_FILE", str(project_root / ".env"))
+load_dotenv(_env_file)
+load_dotenv(project_root / ".env.cloud", override=True)  # no-op if file missing
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
@@ -55,10 +60,41 @@ URGENT_KEYWORDS = [
 
 _replied_cache: set = set()
 
+# Shared lock file — prevents watcher and MCP server from opening Chrome simultaneously
+BROWSER_LOCK_FILE = "/tmp/whatsapp_browser.lock"
+
 # WhatsApp Web selectors
 MSG_INPUT   = 'div[contenteditable="true"][data-tab="10"]'
 CHAT_LIST   = 'div[aria-label="Chat list"], #pane-side'
 QR_CODE     = 'canvas[aria-label="Scan this QR code to link a device!"]'
+
+
+@contextmanager
+def _browser_lock(timeout: int = 90):
+    """
+    Exclusive file lock around any Chrome open/close.
+    Prevents watcher and MCP server from fighting over user_data_dir.
+    Waits up to `timeout` seconds then gives up.
+    """
+    lock_f = open(BROWSER_LOCK_FILE, "w")
+    deadline = time.time() + timeout
+    try:
+        while True:
+            try:
+                fcntl.flock(lock_f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.time() > deadline:
+                    lock_f.close()
+                    raise TimeoutError("Could not acquire browser lock — another process is using Chrome")
+                time.sleep(2)
+        yield
+    finally:
+        try:
+            fcntl.flock(lock_f, fcntl.LOCK_UN)
+        except Exception:
+            pass
+        lock_f.close()
 
 
 # ── Claude API ───────────────────────────────────────────────────────────────
@@ -192,118 +228,125 @@ def run_cycle():
         logger.error(f"Session missing: {SESSION_PATH} — run setup_whatsapp_session.py")
         return
 
-    # ── Phase 1: Read ─────────────────────────────────────────────────────────
+    # ── Phase 1: Read (locked) ────────────────────────────────────────────────
     inbox: list[tuple[str, str]] = []   # (sender, last_msg)
     _seen_this_cycle: set = set()       # deduplicate within one cycle
 
-    with sync_playwright() as p:
-        ctx = _make_browser(p)
-        page = ctx.new_page()
-        try:
-            if not _wait_for_whatsapp(page):
-                ctx.close()
-                return
-
-            rows = page.locator('div[aria-label="Chat list"] > div').all()
-            if not rows:
-                rows = page.locator('#pane-side > div > div > div').all()
-            logger.info(f"Found {len(rows)} chats, checking first {CHATS_TO_CHECK}")
-
-            for i, row in enumerate(rows[:CHATS_TO_CHECK]):
+    try:
+        with _browser_lock():
+            with sync_playwright() as p:
+                ctx = _make_browser(p)
+                page = ctx.new_page()
                 try:
-                    row.click()
-                    page.wait_for_timeout(2000)
-                    sender   = _read_sender(page, i)
-                    last_msg = _read_last_msg(page)
+                    if not _wait_for_whatsapp(page):
+                        ctx.close()
+                        return
 
-                    if not last_msg:
-                        logger.debug(f"No incoming msg in {sender}")
-                        continue
+                    rows = page.locator('div[aria-label="Chat list"] > div').all()
+                    if not rows:
+                        rows = page.locator('#pane-side > div > div > div').all()
+                    logger.info(f"Found {len(rows)} chats, checking first {CHATS_TO_CHECK}")
 
-                    cache_key = f"{sender}:{last_msg[:50]}"
-                    # Skip if already replied (persistent) OR seen in this cycle (dedup)
-                    if cache_key in _replied_cache or cache_key in _seen_this_cycle:
-                        logger.debug(f"Already replied/seen: {sender}")
-                        continue
+                    for i, row in enumerate(rows[:CHATS_TO_CHECK]):
+                        try:
+                            row.click()
+                            page.wait_for_timeout(2000)
+                            sender   = _read_sender(page, i)
+                            last_msg = _read_last_msg(page)
 
-                    _seen_this_cycle.add(cache_key)
-                    logger.info(f"📩 {sender}: {last_msg[:70]}")
-                    inbox.append((sender, last_msg))
+                            if not last_msg:
+                                logger.debug(f"No incoming msg in {sender}")
+                                continue
 
-                    urgent = is_urgent(last_msg)
-                    if urgent:
-                        logger.warning(f"🚨 URGENT from {sender}!")
-                        notify_admin(sender, last_msg)
-                except Exception as e:
-                    logger.debug(f"Read error chat {i}: {e}")
+                            cache_key = f"{sender}:{last_msg[:50]}"
+                            if cache_key in _replied_cache or cache_key in _seen_this_cycle:
+                                logger.debug(f"Already replied/seen: {sender}")
+                                continue
 
-        except (PlaywrightTimeout, Exception) as e:
-            logger.warning(f"Phase-1 error: {e}")
-        finally:
-            ctx.close()   # ← browser fully closed before API calls
+                            _seen_this_cycle.add(cache_key)
+                            logger.info(f"📩 {sender}: {last_msg[:70]}")
+                            inbox.append((sender, last_msg))
+
+                            urgent = is_urgent(last_msg)
+                            if urgent:
+                                logger.warning(f"🚨 URGENT from {sender}!")
+                                notify_admin(sender, last_msg)
+                        except Exception as e:
+                            logger.debug(f"Read error chat {i}: {e}")
+
+                except (PlaywrightTimeout, Exception) as e:
+                    logger.warning(f"Phase-1 error: {e}")
+                finally:
+                    ctx.close()   # ← browser fully closed before API calls
+    except TimeoutError as e:
+        logger.warning(f"Phase-1 lock timeout: {e}")
+        return
 
     if not inbox:
         return
 
-    # ── Phase 2: Generate replies (no browser open) ───────────────────────────
+    # ── Phase 2: Generate replies (no browser, lock released) ─────────────────
     pending: list[tuple[str, str, str]] = []   # (sender, last_msg, reply)
     for sender, last_msg in inbox:
         reply = generate_reply(sender, last_msg)
         logger.info(f"💬 {sender} → {reply[:60]}")
         pending.append((sender, last_msg, reply))
 
-    # ── Phase 3: Send ─────────────────────────────────────────────────────────
-    with sync_playwright() as p:
-        ctx = _make_browser(p)
-        page = ctx.new_page()
-        try:
-            if not _wait_for_whatsapp(page):
-                ctx.close()
-                return
-
-            rows = page.locator('div[aria-label="Chat list"] > div').all()
-            if not rows:
-                rows = page.locator('#pane-side > div > div > div').all()
-
-            # Build a name→row index map (first CHATS_TO_CHECK rows)
-            row_map: dict[str, int] = {}
-            for i, row in enumerate(rows[:CHATS_TO_CHECK]):
+    # ── Phase 3: Send (locked) ────────────────────────────────────────────────
+    try:
+        with _browser_lock():
+            with sync_playwright() as p:
+                ctx = _make_browser(p)
+                page = ctx.new_page()
                 try:
-                    row.click()
-                    page.wait_for_timeout(1500)
-                    name = _read_sender(page, i)
-                    row_map[name] = i
-                except Exception:
-                    pass
+                    if not _wait_for_whatsapp(page):
+                        ctx.close()
+                        return
 
-            for sender, last_msg, reply in pending:
-                sent = False
-                try:
-                    # Click the right chat (already mapped above)
-                    idx = row_map.get(sender)
-                    if idx is not None:
-                        rows[idx].click()
-                        page.wait_for_timeout(1500)
+                    rows = page.locator('div[aria-label="Chat list"] > div').all()
+                    if not rows:
+                        rows = page.locator('#pane-side > div > div > div').all()
 
-                    msg_box = page.wait_for_selector(MSG_INPUT, timeout=8000)
-                    msg_box.click()
-                    msg_box.fill(reply)
-                    page.wait_for_timeout(500)
-                    page.keyboard.press("Enter")
-                    page.wait_for_timeout(2000)
-                    sent = True
-                    logger.info(f"✅ Sent to {sender}")
-                except Exception as e:
-                    logger.warning(f"⚠️ Send failed to {sender}: {e}")
+                    # Build a name→row index map (first CHATS_TO_CHECK rows)
+                    row_map: dict[str, int] = {}
+                    for i, row in enumerate(rows[:CHATS_TO_CHECK]):
+                        try:
+                            row.click()
+                            page.wait_for_timeout(1500)
+                            name = _read_sender(page, i)
+                            row_map[name] = i
+                        except Exception:
+                            pass
 
-                cache_key = f"{sender}:{last_msg[:50]}"
-                _replied_cache.add(cache_key)
-                log_action(sender, last_msg, reply, is_urgent(last_msg), sent)
+                    for sender, last_msg, reply in pending:
+                        sent = False
+                        try:
+                            idx = row_map.get(sender)
+                            if idx is not None:
+                                rows[idx].click()
+                                page.wait_for_timeout(1500)
 
-        except (PlaywrightTimeout, Exception) as e:
-            logger.warning(f"Phase-3 error: {e}")
-        finally:
-            ctx.close()
+                            msg_box = page.wait_for_selector(MSG_INPUT, timeout=8000)
+                            msg_box.click()
+                            msg_box.fill(reply)
+                            page.wait_for_timeout(500)
+                            page.keyboard.press("Enter")
+                            page.wait_for_timeout(2000)
+                            sent = True
+                            logger.info(f"✅ Sent to {sender}")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Send failed to {sender}: {e}")
+
+                        cache_key = f"{sender}:{last_msg[:50]}"
+                        _replied_cache.add(cache_key)
+                        log_action(sender, last_msg, reply, is_urgent(last_msg), sent)
+
+                except (PlaywrightTimeout, Exception) as e:
+                    logger.warning(f"Phase-3 error: {e}")
+                finally:
+                    ctx.close()
+    except TimeoutError as e:
+        logger.warning(f"Phase-3 lock timeout: {e}")
 
     if len(_replied_cache) > 500:
         _replied_cache.clear()

@@ -16,9 +16,38 @@ Created: 2026-02-14
 import sys
 import json
 import os
+import fcntl
+import time
+from contextlib import contextmanager
 from datetime import datetime
 from typing import Dict, Any
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
+
+# ── Shared browser lock (same file as whatsapp_watcher.py) ────────────────────
+BROWSER_LOCK_FILE = "/tmp/whatsapp_browser.lock"
+
+@contextmanager
+def _browser_lock(timeout: int = 90):
+    """Exclusive lock — prevents MCP server and watcher from opening Chrome simultaneously."""
+    lock_f = open(BROWSER_LOCK_FILE, "w")
+    deadline = time.time() + timeout
+    try:
+        while True:
+            try:
+                fcntl.flock(lock_f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.time() > deadline:
+                    lock_f.close()
+                    raise TimeoutError("Browser lock timeout — watcher may be running")
+                time.sleep(2)
+        yield
+    finally:
+        try:
+            fcntl.flock(lock_f, fcntl.LOCK_UN)
+        except Exception:
+            pass
+        lock_f.close()
 
 
 # WhatsApp Web selectors (as of 2026-02)
@@ -92,62 +121,63 @@ def send_message(chat_id: str, message: str) -> Dict[str, Any]:
         raise Exception("SESSION_EXPIRED: WhatsApp session directory not found — run setup_whatsapp_session.py")
 
     try:
-        with sync_playwright() as p:
-            # Use launch_persistent_context — preserves IndexedDB + ServiceWorkers
-            # (storage_state JSON only saves cookies/localStorage, not enough for WhatsApp)
-            # WSL2: headless=True hangs; headed via WSLg display works.
-            context = p.chromium.launch_persistent_context(
-                user_data_dir=session_path,
-                headless=False,
-                args=[
-                    "--no-sandbox",
-                    "--disable-dev-shm-usage",
-                    "--window-size=1,1",
-                    "--window-position=0,0",
-                ],
-                viewport={"width": 1280, "height": 800},
-            )
-            page = context.new_page()
-
-            # domcontentloaded fires fast; WhatsApp JS needs extra time to render UI
-            page.goto('https://web.whatsapp.com', wait_until='domcontentloaded', timeout=30000)
-            page.wait_for_timeout(3000)  # Let WhatsApp JS initialize
-
-            # Wait for logged-in state OR QR code
-            try:
-                page.wait_for_selector(
-                    f'{SELECTORS["LOGGED_IN"]}, {SELECTORS["QR_CODE"]}',
-                    timeout=90000
+        with _browser_lock(timeout=90):
+            with sync_playwright() as p:
+                # Use launch_persistent_context — preserves IndexedDB + ServiceWorkers
+                # (storage_state JSON only saves cookies/localStorage, not enough for WhatsApp)
+                # WSL2: headless=True hangs; headed via WSLg display works.
+                context = p.chromium.launch_persistent_context(
+                    user_data_dir=session_path,
+                    headless=False,
+                    args=[
+                        "--no-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--window-size=1,1",
+                        "--window-position=0,0",
+                    ],
+                    viewport={"width": 1280, "height": 800},
                 )
-            except PlaywrightTimeout:
-                raise Exception("LOAD_TIMEOUT: WhatsApp Web did not load within 90s")
+                page = context.new_page()
 
-            if page.locator(SELECTORS["QR_CODE"]).count() > 0:
-                raise Exception("SESSION_EXPIRED: QR code detected — re-run setup_whatsapp_session.py")
+                # domcontentloaded fires fast; WhatsApp JS needs extra time to render UI
+                page.goto('https://web.whatsapp.com', wait_until='domcontentloaded', timeout=30000)
+                page.wait_for_timeout(3000)  # Let WhatsApp JS initialize
 
-            # Search for contact
-            search_box = page.wait_for_selector(SELECTORS["SEARCH_BOX"], timeout=15000)
-            search_box.fill(chat_id)
-            page.keyboard.press('Enter')
-            page.wait_for_timeout(2000)  # Wait for chat to open
+                # Wait for logged-in state OR QR code
+                try:
+                    page.wait_for_selector(
+                        f'{SELECTORS["LOGGED_IN"]}, {SELECTORS["QR_CODE"]}',
+                        timeout=90000
+                    )
+                except PlaywrightTimeout:
+                    raise Exception("LOAD_TIMEOUT: WhatsApp Web did not load within 90s")
 
-            # Type and send message
-            message_input = page.wait_for_selector(SELECTORS["MESSAGE_INPUT"], timeout=15000)
-            message_input.fill(message)
-            page.click(SELECTORS["SEND_BUTTON"])
+                if page.locator(SELECTORS["QR_CODE"]).count() > 0:
+                    raise Exception("SESSION_EXPIRED: QR code detected — re-run setup_whatsapp_session.py")
 
-            # Wait for send confirmation
-            page.wait_for_timeout(2000)
+                # Search for contact
+                search_box = page.wait_for_selector(SELECTORS["SEARCH_BOX"], timeout=15000)
+                search_box.fill(chat_id)
+                page.keyboard.press('Enter')
+                page.wait_for_timeout(2000)  # Wait for chat to open
 
-            context.close()  # persistent context — no separate browser object
+                # Type and send message
+                message_input = page.wait_for_selector(SELECTORS["MESSAGE_INPUT"], timeout=15000)
+                message_input.fill(message)
+                page.click(SELECTORS["SEND_BUTTON"])
 
-            message_id = f"msg_{int(datetime.now().timestamp())}"
-            sent_at = datetime.now().isoformat()
+                # Wait for send confirmation
+                page.wait_for_timeout(2000)
 
-            return {
-                "message_id": message_id,
-                "sent_at": sent_at
-            }
+                context.close()  # persistent context — no separate browser object
+
+                message_id = f"msg_{int(datetime.now().timestamp())}"
+                sent_at = datetime.now().isoformat()
+
+                return {
+                    "message_id": message_id,
+                    "sent_at": sent_at
+                }
 
     except PlaywrightTimeout:
         raise Exception("SESSION_EXPIRED: WhatsApp Web login screen detected")
@@ -169,79 +199,80 @@ def get_messages(limit: int = 10) -> Dict[str, Any]:
 
     messages = []
     try:
-        with sync_playwright() as p:
-            context = p.chromium.launch_persistent_context(
-                user_data_dir=session_path,
-                headless=False,
-                args=["--no-sandbox", "--disable-dev-shm-usage",
-                      "--window-size=1,1", "--window-position=0,0"],
-                viewport={"width": 1280, "height": 800},
-            )
-            page = context.new_page()
-            page.goto('https://web.whatsapp.com', wait_until='domcontentloaded', timeout=30000)
-            page.wait_for_timeout(4000)
+        with _browser_lock(timeout=90):
+            with sync_playwright() as p:
+                context = p.chromium.launch_persistent_context(
+                    user_data_dir=session_path,
+                    headless=False,
+                    args=["--no-sandbox", "--disable-dev-shm-usage",
+                          "--window-size=1,1", "--window-position=0,0"],
+                    viewport={"width": 1280, "height": 800},
+                )
+                page = context.new_page()
+                page.goto('https://web.whatsapp.com', wait_until='domcontentloaded', timeout=30000)
+                page.wait_for_timeout(4000)
 
-            page.wait_for_selector(
-                f'{SELECTORS["LOGGED_IN"]}, {SELECTORS["QR_CODE"]}',
-                timeout=90000
-            )
-            if page.locator(SELECTORS["QR_CODE"]).count() > 0:
-                raise Exception("SESSION_EXPIRED: QR code detected")
+                page.wait_for_selector(
+                    f'{SELECTORS["LOGGED_IN"]}, {SELECTORS["QR_CODE"]}',
+                    timeout=90000
+                )
+                if page.locator(SELECTORS["QR_CODE"]).count() > 0:
+                    raise Exception("SESSION_EXPIRED: QR code detected")
 
-            page.wait_for_timeout(2000)
+                page.wait_for_timeout(2000)
 
-            # Find unread chats via unread badge (multiple selector fallbacks)
-            unread_badge_sel = (
-                '[data-testid="icon-unread-count"], '
-                'span[aria-label*="unread message"], '
-                'span[aria-label*="unread"]'
-            )
-            badges = page.locator(unread_badge_sel).all()
+                # Find unread chats via unread badge (multiple selector fallbacks)
+                unread_badge_sel = (
+                    '[data-testid="icon-unread-count"], '
+                    'span[aria-label*="unread message"], '
+                    'span[aria-label*="unread"]'
+                )
+                badges = page.locator(unread_badge_sel).all()
 
-            for badge in badges[:limit]:
-                try:
-                    # Navigate up to the chat list item and click it
-                    chat_item = badge.locator('xpath=ancestor::div[@role="listitem" or @data-testid="cell-frame-container"][1]')
-                    if chat_item.count() == 0:
-                        chat_item = badge.locator('xpath=ancestor::div[contains(@class,"focusable-list-item")][1]')
+                for badge in badges[:limit]:
+                    try:
+                        # Navigate up to the chat list item and click it
+                        chat_item = badge.locator('xpath=ancestor::div[@role="listitem" or @data-testid="cell-frame-container"][1]')
+                        if chat_item.count() == 0:
+                            chat_item = badge.locator('xpath=ancestor::div[contains(@class,"focusable-list-item")][1]')
 
-                    # Get sender name from title span
-                    sender = "Unknown"
-                    title_el = page.locator(f'span[title]:near({badge}, 200)')
-                    if title_el.count() > 0:
-                        sender = title_el.first.get_attribute('title') or "Unknown"
+                        # Get sender name from title span
+                        sender = "Unknown"
+                        title_el = page.locator(f'span[title]:near({badge}, 200)')
+                        if title_el.count() > 0:
+                            sender = title_el.first.get_attribute('title') or "Unknown"
 
-                    # Click to open chat
-                    badge.click()
-                    page.wait_for_timeout(2000)
+                        # Click to open chat
+                        badge.click()
+                        page.wait_for_timeout(2000)
 
-                    # Read last incoming message text
-                    incoming = page.locator(
-                        'div.message-in span.selectable-text, '
-                        'div[data-testid="msg-container"] span.selectable-text'
-                    ).all()
+                        # Read last incoming message text
+                        incoming = page.locator(
+                            'div.message-in span.selectable-text, '
+                            'div[data-testid="msg-container"] span.selectable-text'
+                        ).all()
 
-                    text_parts = []
-                    for el in incoming[-3:]:
-                        try:
-                            t = el.inner_text().strip()
-                            if t:
-                                text_parts.append(t)
-                        except Exception:
-                            pass
+                        text_parts = []
+                        for el in incoming[-3:]:
+                            try:
+                                t = el.inner_text().strip()
+                                if t:
+                                    text_parts.append(t)
+                            except Exception:
+                                pass
 
-                    if text_parts:
-                        messages.append({
-                            "sender": sender,
-                            "message": " | ".join(text_parts),
-                            "timestamp": datetime.now().isoformat(),
-                            "is_unread": True
-                        })
-                except Exception:
-                    continue
+                        if text_parts:
+                            messages.append({
+                                "sender": sender,
+                                "message": " | ".join(text_parts),
+                                "timestamp": datetime.now().isoformat(),
+                                "is_unread": True
+                            })
+                    except Exception:
+                        continue
 
-            context.close()
-            return {"messages": messages, "count": len(messages)}
+                context.close()
+                return {"messages": messages, "count": len(messages)}
 
     except Exception as e:
         raise Exception(f"GET_MESSAGES_FAILED: {e}")
@@ -268,90 +299,91 @@ def process_inbox(replies: Dict[str, str]) -> Dict[str, Any]:
     messages = []
 
     try:
-        with sync_playwright() as p:
-            context = p.chromium.launch_persistent_context(
-                user_data_dir=session_path,
-                headless=False,
-                args=["--no-sandbox", "--disable-dev-shm-usage",
-                      "--window-size=1,1", "--window-position=0,0"],
-                viewport={"width": 1280, "height": 800},
-            )
-            page = context.new_page()
-            page.goto('https://web.whatsapp.com', wait_until='domcontentloaded', timeout=30000)
-            page.wait_for_timeout(4000)
+        with _browser_lock(timeout=90):
+            with sync_playwright() as p:
+                context = p.chromium.launch_persistent_context(
+                    user_data_dir=session_path,
+                    headless=False,
+                    args=["--no-sandbox", "--disable-dev-shm-usage",
+                          "--window-size=1,1", "--window-position=0,0"],
+                    viewport={"width": 1280, "height": 800},
+                )
+                page = context.new_page()
+                page.goto('https://web.whatsapp.com', wait_until='domcontentloaded', timeout=30000)
+                page.wait_for_timeout(4000)
 
-            page.wait_for_selector(
-                f'{SELECTORS["LOGGED_IN"]}, {SELECTORS["QR_CODE"]}',
-                timeout=90000
-            )
-            if page.locator(SELECTORS["QR_CODE"]).count() > 0:
-                raise Exception("SESSION_EXPIRED: QR code detected")
+                page.wait_for_selector(
+                    f'{SELECTORS["LOGGED_IN"]}, {SELECTORS["QR_CODE"]}',
+                    timeout=90000
+                )
+                if page.locator(SELECTORS["QR_CODE"]).count() > 0:
+                    raise Exception("SESSION_EXPIRED: QR code detected")
 
-            page.wait_for_timeout(2000)
+                page.wait_for_timeout(2000)
 
-            # ── Step 1: Read all unread messages ─────────────────────
-            unread_badge_sel = (
-                '[data-testid="icon-unread-count"], '
-                'span[aria-label*="unread message"], '
-                'span[aria-label*="unread"]'
-            )
-            badges = page.locator(unread_badge_sel).all()
+                # ── Step 1: Read all unread messages ─────────────────────
+                unread_badge_sel = (
+                    '[data-testid="icon-unread-count"], '
+                    'span[aria-label*="unread message"], '
+                    'span[aria-label*="unread"]'
+                )
+                badges = page.locator(unread_badge_sel).all()
 
-            for badge in badges[:10]:
-                try:
-                    sender = "Unknown"
-                    title_el = page.locator(f'span[title]:near({badge}, 200)')
-                    if title_el.count() > 0:
-                        sender = title_el.first.get_attribute('title') or "Unknown"
+                for badge in badges[:10]:
+                    try:
+                        sender = "Unknown"
+                        title_el = page.locator(f'span[title]:near({badge}, 200)')
+                        if title_el.count() > 0:
+                            sender = title_el.first.get_attribute('title') or "Unknown"
 
-                    badge.click()
-                    page.wait_for_timeout(2000)
+                        badge.click()
+                        page.wait_for_timeout(2000)
 
-                    incoming = page.locator(
-                        'div.message-in span.selectable-text, '
-                        'div[data-testid="msg-container"] span.selectable-text'
-                    ).all()
-                    text_parts = []
-                    for el in incoming[-3:]:
-                        try:
-                            t = el.inner_text().strip()
-                            if t:
-                                text_parts.append(t)
-                        except Exception:
-                            pass
+                        incoming = page.locator(
+                            'div.message-in span.selectable-text, '
+                            'div[data-testid="msg-container"] span.selectable-text'
+                        ).all()
+                        text_parts = []
+                        for el in incoming[-3:]:
+                            try:
+                                t = el.inner_text().strip()
+                                if t:
+                                    text_parts.append(t)
+                            except Exception:
+                                pass
 
-                    if text_parts:
-                        messages.append({
-                            "sender": sender,
-                            "message": " | ".join(text_parts),
-                            "timestamp": datetime.now().isoformat(),
-                        })
-                except Exception:
-                    continue
+                        if text_parts:
+                            messages.append({
+                                "sender": sender,
+                                "message": " | ".join(text_parts),
+                                "timestamp": datetime.now().isoformat(),
+                            })
+                    except Exception:
+                        continue
 
-            # ── Step 2: Send replies in same session ──────────────────
-            for reply_to, reply_text in replies.items():
-                try:
-                    search_box = page.wait_for_selector(SELECTORS["SEARCH_BOX"], timeout=10000)
-                    search_box.fill(reply_to)
-                    page.keyboard.press('Enter')
-                    page.wait_for_timeout(2000)
+                # ── Step 2: Send replies in same session ──────────────────
+                for reply_to, reply_text in replies.items():
+                    try:
+                        search_box = page.wait_for_selector(SELECTORS["SEARCH_BOX"], timeout=10000)
+                        search_box.fill(reply_to)
+                        page.keyboard.press('Enter')
+                        page.wait_for_timeout(2000)
 
-                    msg_input = page.wait_for_selector(SELECTORS["MESSAGE_INPUT"], timeout=10000)
-                    msg_input.fill(reply_text)
-                    page.click(SELECTORS["SEND_BUTTON"])
-                    page.wait_for_timeout(2000)
-                    sent.append(reply_to)
-                except Exception as e:
-                    failed.append({"sender": reply_to, "error": str(e)})
+                        msg_input = page.wait_for_selector(SELECTORS["MESSAGE_INPUT"], timeout=10000)
+                        msg_input.fill(reply_text)
+                        page.click(SELECTORS["SEND_BUTTON"])
+                        page.wait_for_timeout(2000)
+                        sent.append(reply_to)
+                    except Exception as e:
+                        failed.append({"sender": reply_to, "error": str(e)})
 
-            context.close()
-            return {
-                "messages": messages,
-                "sent": sent,
-                "failed": failed,
-                "count": len(messages)
-            }
+                context.close()
+                return {
+                    "messages": messages,
+                    "sent": sent,
+                    "failed": failed,
+                    "count": len(messages)
+                }
 
     except Exception as e:
         raise Exception(f"PROCESS_INBOX_FAILED: {e}")
