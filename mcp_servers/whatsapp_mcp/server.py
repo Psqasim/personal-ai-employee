@@ -155,6 +155,103 @@ def send_message(chat_id: str, message: str) -> Dict[str, Any]:
         raise Exception(f"SEND_FAILED: {e}")
 
 
+def get_messages(limit: int = 10) -> Dict[str, Any]:
+    """
+    Read unread WhatsApp messages via Playwright.
+
+    Returns:
+        Dict with list of {sender, message, timestamp, is_unread}
+    """
+    session_path = os.getenv("WHATSAPP_SESSION_PATH")
+
+    if not session_path or not os.path.isdir(session_path):
+        raise Exception("SESSION_EXPIRED: WhatsApp session directory not found")
+
+    messages = []
+
+    try:
+        with sync_playwright() as p:
+            context = p.chromium.launch_persistent_context(
+                user_data_dir=session_path,
+                headless=False,
+                args=["--no-sandbox", "--disable-dev-shm-usage",
+                      "--window-size=1,1", "--window-position=0,0"],
+                viewport={"width": 1280, "height": 800},
+            )
+            page = context.new_page()
+            page.goto('https://web.whatsapp.com', wait_until='domcontentloaded', timeout=30000)
+            page.wait_for_timeout(3000)
+
+            page.wait_for_selector(
+                f'{SELECTORS["LOGGED_IN"]}, {SELECTORS["QR_CODE"]}',
+                timeout=90000
+            )
+
+            if page.locator(SELECTORS["QR_CODE"]).count() > 0:
+                raise Exception("SESSION_EXPIRED: QR code detected")
+
+            # Wait for chat list to fully load
+            page.wait_for_timeout(2000)
+
+            # Find all unread chats (have unread badge)
+            unread_chats = page.locator(
+                'div[aria-label="Chat list"] div[role="listitem"]'
+            ).all()
+
+            checked = 0
+            for chat in unread_chats[:limit]:
+                if checked >= limit:
+                    break
+
+                # Check if has unread count badge
+                badge = chat.locator('span[aria-label*="unread"], span[data-testid="icon-unread-count"]')
+                if badge.count() == 0:
+                    continue
+
+                # Get sender name
+                sender_el = chat.locator('span[title]')
+                sender = sender_el.first.get_attribute('title') if sender_el.count() > 0 else "Unknown"
+
+                # Click to open chat
+                chat.click()
+                page.wait_for_timeout(1500)
+
+                # Get last few messages from conversation (incoming only)
+                msg_els = page.locator(
+                    'div.message-in span.selectable-text'
+                ).all()
+
+                if not msg_els:
+                    # fallback selector
+                    msg_els = page.locator(
+                        'div[data-testid="msg-container"] span.selectable-text'
+                    ).all()
+
+                last_msgs = []
+                for m in msg_els[-3:]:  # last 3 incoming messages
+                    try:
+                        text = m.inner_text()
+                        if text.strip():
+                            last_msgs.append(text.strip())
+                    except Exception:
+                        pass
+
+                if last_msgs:
+                    messages.append({
+                        "sender": sender,
+                        "message": " | ".join(last_msgs),
+                        "timestamp": datetime.now().isoformat(),
+                        "is_unread": True
+                    })
+                    checked += 1
+
+            context.close()
+            return {"messages": messages, "count": len(messages)}
+
+    except Exception as e:
+        raise Exception(f"GET_MESSAGES_FAILED: {e}")
+
+
 def tools_list() -> Dict[str, Any]:
     """List available tools"""
     return {
@@ -174,6 +271,17 @@ def tools_list() -> Dict[str, Any]:
                         "message": {"type": "string", "description": "Message text"}
                     },
                     "required": ["chat_id", "message"]
+                }
+            },
+            {
+                "name": "get_messages",
+                "description": "Read unread WhatsApp messages",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "limit": {"type": "integer", "description": "Max chats to check (default 10)"}
+                    },
+                    "required": []
                 }
             }
         ]
@@ -220,6 +328,10 @@ def handle_request(request: Dict[str, Any]) -> Dict[str, Any]:
                     chat_id=arguments.get("chat_id"),
                     message=arguments.get("message")
                 )
+                return {"jsonrpc": "2.0", "id": request_id, "result": result}
+
+            elif tool_name == "get_messages":
+                result = get_messages(limit=arguments.get("limit", 10))
                 return {"jsonrpc": "2.0", "id": request_id, "result": result}
 
             else:

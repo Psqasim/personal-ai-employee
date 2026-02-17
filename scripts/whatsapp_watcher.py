@@ -1,254 +1,226 @@
 #!/usr/bin/env python3
 """
-WhatsApp Watcher - Gold Tier
+WhatsApp Watcher - Platinum Tier Auto-Reply Bot
 
-Monitors WhatsApp Web for new messages, detects important ones via keywords,
-and generates draft replies.
+Runs 24/7 as PM2 process. Every 30s:
+1. Reads unread WhatsApp messages via whatsapp-mcp get_messages
+2. Claude API (haiku) generates a smart reply
+3. Urgent message? → WhatsApp notify admin immediately
+4. Auto-sends reply back to sender
 
-Features:
-- Playwright browser automation with saved session
-- Keyword-based priority detection
-- Draft generation for important messages
-- Session expiry detection with auto-recovery notification
+No Claude CLI needed — uses Claude API directly.
+Enable with: ENABLE_WHATSAPP_WATCHER=true in .env
 
-Author: Personal AI Employee (Gold Tier)
-Created: 2026-02-14
-Tasks: T030-T032 (watcher, keyword detection, session expiry)
+Author: Personal AI Employee (Platinum Tier)
+Created: 2026-02-17
 """
 
 import os
 import sys
 import time
+import logging
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Any, List, Optional
+from typing import List, Dict, Any
 
-# Add agent_skills to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add project root to path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
-from agent_skills.draft_generator import generate_whatsapp_draft
+from dotenv import load_dotenv
+load_dotenv(project_root / ".env")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - [WA-WATCHER] - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
+
+# ── Config ─────────────────────────────────────────────────────────────────
+POLL_INTERVAL = int(os.getenv("WHATSAPP_POLL_INTERVAL", "30"))
+ADMIN_NUMBER  = os.getenv("WHATSAPP_NOTIFICATION_NUMBER", "")
+ENABLE        = os.getenv("ENABLE_WHATSAPP_WATCHER", "false").lower() == "true"
+CLAUDE_MODEL  = "claude-haiku-4-5-20251001"   # fast + cheap for auto-reply
+
+URGENT_KEYWORDS = [
+    "urgent", "emergency", "asap", "help", "problem", "error",
+    "down", "broken", "critical", "immediately", "crisis",
+    "فوری", "مدد", "ضروری",  # Urdu
+]
+
+# In-memory cache to avoid replying twice to same message
+_replied_cache: set = set()
 
 
-def monitor_whatsapp_for_drafts(vault_path: str, poll_interval: int = 30):
-    """
-    Monitor WhatsApp Web for new messages and generate drafts for important ones.
+# ── MCP helpers ────────────────────────────────────────────────────────────
+def _mcp():
+    from agent_skills.mcp_client import get_mcp_client
+    return get_mcp_client(timeout=120)
 
-    Args:
-        vault_path: Absolute path to vault root
-        poll_interval: Seconds between polls (default: 30)
 
-    Note: This is a simplified implementation. Full production version would use
-    Playwright to actually poll WhatsApp Web. This version monitors vault/Inbox/
-    for WHATSAPP_* files created by external WhatsApp monitoring.
-    """
-    vault = Path(vault_path)
-    inbox_dir = vault / "Inbox"
-    pending_approval_whatsapp = vault / "Pending_Approval" / "WhatsApp"
-    needs_action_dir = vault / "Needs_Action"
+def fetch_unread() -> List[Dict]:
+    """Fetch unread messages via whatsapp-mcp get_messages."""
+    try:
+        r = _mcp().call_tool(
+            mcp_server="whatsapp-mcp",
+            tool_name="get_messages",
+            arguments={"limit": 10},
+            retry_count=1,
+            retry_delay=2,
+        )
+        return r.get("messages", [])
+    except Exception as e:
+        logger.warning(f"fetch_unread failed: {e}")
+        return []
 
-    # Ensure directories exist
-    pending_approval_whatsapp.mkdir(parents=True, exist_ok=True)
-    needs_action_dir.mkdir(parents=True, exist_ok=True)
 
-    # Get keywords from environment
-    keywords_str = os.getenv("WHATSAPP_KEYWORDS", "urgent,meeting,payment,deadline,invoice,asap,help,client,contract")
-    keywords = [k.strip() for k in keywords_str.split(",")]
+def send_whatsapp(chat_id: str, message: str) -> bool:
+    """Send reply via whatsapp-mcp send_message."""
+    try:
+        r = _mcp().call_tool(
+            mcp_server="whatsapp-mcp",
+            tool_name="send_message",
+            arguments={"chat_id": chat_id, "message": message},
+            retry_count=1,
+            retry_delay=2,
+        )
+        return bool(r.get("message_id"))
+    except Exception as e:
+        logger.warning(f"send_whatsapp failed ({chat_id}): {e}")
+        return False
 
-    print(f"[whatsapp_watcher] Starting WhatsApp watcher (poll interval: {poll_interval}s)")
-    print(f"[whatsapp_watcher] Monitoring: {inbox_dir}")
-    print(f"[whatsapp_watcher] Keywords: {keywords}")
-    print(f"[whatsapp_watcher] Draft output: {pending_approval_whatsapp}")
 
-    processed_messages = set()  # Track processed message IDs
+# ── AI reply ───────────────────────────────────────────────────────────────
+def generate_reply(sender: str, message: str) -> str:
+    """Use Claude Haiku to generate a smart reply."""
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=os.getenv("CLAUDE_API_KEY"))
+        resp = client.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=150,
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"You are Qasim's AI assistant. '{sender}' sent this WhatsApp message:\n\n"
+                    f'"{message}"\n\n'
+                    "Write a short, friendly, professional reply in the same language. "
+                    "Max 2-3 sentences. Sign off as '— Qasim's Assistant'."
+                )
+            }]
+        )
+        return resp.content[0].text.strip()
+    except Exception as e:
+        logger.warning(f"Claude API error: {e}")
+        return "Thanks for your message! Qasim will get back to you shortly. — Qasim's Assistant"
+
+
+# ── Urgency ────────────────────────────────────────────────────────────────
+def is_urgent(text: str) -> bool:
+    t = text.lower()
+    return any(kw in t for kw in URGENT_KEYWORDS)
+
+
+def notify_admin(sender: str, message: str):
+    """WhatsApp-notify admin about urgent incoming message."""
+    if not ADMIN_NUMBER:
+        return
+    alert = (
+        f"⚠️ *Urgent WhatsApp Received!*\n"
+        f"From: {sender}\n"
+        f"Message: {message[:200]}\n"
+        f"Time: {datetime.now().strftime('%H:%M:%S')}"
+    )
+    try:
+        from cloud_agent.src.notifications.whatsapp_notifier import _send_in_thread
+        _send_in_thread(alert, "urgent_whatsapp")
+        logger.info(f"Admin notified about urgent msg from {sender}")
+    except Exception as e:
+        logger.warning(f"Admin notify failed: {e}")
+
+
+# ── Logging ────────────────────────────────────────────────────────────────
+def log_action(sender: str, message: str, reply: str, urgent: bool, sent: bool):
+    try:
+        vault = Path(os.getenv("VAULT_PATH", "vault"))
+        log_dir = vault / "Logs" / "WhatsApp"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / "auto_replies.md"
+
+        if not log_file.exists():
+            log_file.write_text(
+                "# WhatsApp Auto-Reply Log\n\n"
+                "| Timestamp | From | Urgent | Replied | Message | Reply |\n"
+                "|-----------|------|--------|---------|---------|-------|\n"
+            )
+        ts = datetime.now().isoformat()
+        status_u = "🚨" if urgent else "—"
+        status_r = "✅" if sent else "❌"
+        msg_s = message[:50].replace("|", "-")
+        rep_s = reply[:50].replace("|", "-")
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(f"| {ts} | {sender} | {status_u} | {status_r} | {msg_s} | {rep_s} |\n")
+    except Exception as e:
+        logger.warning(f"log_action failed: {e}")
+
+
+# ── Main loop ──────────────────────────────────────────────────────────────
+def run():
+    logger.info("🤖 WhatsApp Watcher started (Platinum Tier)")
+    logger.info(f"Poll: {POLL_INTERVAL}s | Admin: {ADMIN_NUMBER or 'not set'}")
+
+    if not ENABLE:
+        logger.warning("ENABLE_WHATSAPP_WATCHER=false. Set to true in .env to start.")
+        return
 
     while True:
         try:
-            # Scan inbox for WHATSAPP_* files
-            if inbox_dir.exists():
-                for whatsapp_file in inbox_dir.glob("WHATSAPP_*.md"):
-                    message_id = whatsapp_file.stem
+            messages = fetch_unread()
+            if messages:
+                logger.info(f"📬 {len(messages)} unread message(s)")
+            for msg in messages:
+                sender  = msg.get("sender", "Unknown")
+                text    = msg.get("message", "")
+                key     = f"{sender}:{text[:50]}"
 
-                    # Skip already processed
-                    if message_id in processed_messages:
-                        continue
+                if key in _replied_cache:
+                    continue
 
-                    # Parse message file
-                    try:
-                        from agent_skills.vault_parser import parse_frontmatter
-                        frontmatter, body = parse_frontmatter(str(whatsapp_file))
+                urgent = is_urgent(text)
+                logger.info(f"{'🚨 URGENT' if urgent else '📩'} from {sender}: {text[:60]}")
 
-                        # Check if type=whatsapp
-                        if frontmatter.get("type") != "whatsapp":
-                            continue
+                if urgent:
+                    notify_admin(sender, text)
 
-                        # Extract message preview
-                        message_preview = frontmatter.get("message_preview", body[:200])
+                reply = generate_reply(sender, text)
+                sent  = send_whatsapp(sender, reply)
+                log_action(sender, text, reply, urgent, sent)
 
-                        # Keyword detection (T031)
-                        matched_keywords = detect_keywords(message_preview, keywords)
+                if sent:
+                    logger.info(f"✅ Replied to {sender}")
+                else:
+                    logger.warning(f"⚠️ Reply failed to {sender}")
 
-                        # Set priority based on keywords
-                        priority = "High" if matched_keywords else "Medium"
+                _replied_cache.add(key)
+                if len(_replied_cache) > 500:
+                    _replied_cache.clear()
 
-                        # Only generate drafts for high-priority messages
-                        if priority == "High":
-                            print(f"[whatsapp_watcher] Important message detected: {message_id}")
-                            print(f"[whatsapp_watcher] Keywords matched: {matched_keywords}")
-
-                            # Prepare original message dict
-                            original_message = {
-                                "message_id": message_id,
-                                "contact_name": frontmatter.get("from", "Unknown Contact"),
-                                "chat_id": frontmatter.get("chat_id", message_id),
-                                "message_preview": message_preview,
-                                "keywords_matched": matched_keywords
-                            }
-
-                            # Generate draft
-                            draft = generate_whatsapp_draft(original_message)
-
-                            # Save draft to vault/Pending_Approval/WhatsApp/
-                            draft_file = pending_approval_whatsapp / f"{draft['draft_id']}.md"
-                            _save_whatsapp_draft(draft, draft_file)
-
-                            print(f"[whatsapp_watcher] Draft saved: {draft_file.name}")
-
-                        processed_messages.add(message_id)
-
-                    except Exception as e:
-                        print(f"[whatsapp_watcher] Error processing {whatsapp_file.name}: {e}")
-                        processed_messages.add(message_id)
-
-            # Sleep until next poll
-            time.sleep(poll_interval)
-
-        except KeyboardInterrupt:
-            print("\n[whatsapp_watcher] Stopped by user")
-            break
         except Exception as e:
-            print(f"[whatsapp_watcher] Error in main loop: {e}")
-            # Check if session expired (would be detected by Playwright in production)
-            # _handle_session_expiry(vault)
-            time.sleep(poll_interval)
+            logger.error(f"Loop error: {e}")
+
+        time.sleep(POLL_INTERVAL)
 
 
-def detect_keywords(message: str, keywords: List[str]) -> List[str]:
-    """
-    Detect keywords in message (T031: keyword detection).
-
-    Args:
-        message: Message text
-        keywords: List of keywords to search for
-
-    Returns:
-        List of matched keywords (lowercase)
-    """
-    message_lower = message.lower()
-    matched = []
-
-    for keyword in keywords:
-        if keyword.lower() in message_lower:
-            matched.append(keyword)
-
-    return matched
+# ── Gold-tier compat (vault/Inbox/ file-based monitoring) ──────────────────
+def monitor_whatsapp_for_drafts(vault_path: str, poll_interval: int = 30):
+    """Legacy Gold-tier entry point — just calls run()."""
+    run()
 
 
-def _save_whatsapp_draft(draft: Dict[str, Any], output_path: Path):
-    """Save WhatsAppDraft to markdown file with YAML frontmatter"""
-    keywords_yaml = "  - " + "\n  - ".join(draft['keywords_matched']) if draft['keywords_matched'] else "  []"
-
-    # Convert None to YAML null for sent_at
-    sent_at_value = "null" if draft['sent_at'] is None else draft['sent_at']
-
-    content = f"""---
-draft_id: {draft['draft_id']}
-original_message_id: {draft['original_message_id']}
-to: {draft['to']}
-chat_id: {draft['chat_id']}
-draft_body: {draft['draft_body']}
-status: {draft['status']}
-generated_at: {draft['generated_at']}
-sent_at: {sent_at_value}
-keywords_matched:
-{keywords_yaml}
-action: {draft['action']}
-mcp_server: {draft['mcp_server']}
----
-
-# WhatsApp Draft Reply
-
-**Original Message**: [[{draft['original_message_id']}]]
-**To**: {draft['to']}
-**Keywords**: {', '.join(draft['keywords_matched']) if draft['keywords_matched'] else 'None'}
-
-## Draft Message
-
-"{draft['draft_body']}"
-
-## Approval
-
-- Move to `vault/Approved/WhatsApp/` to send
-- Move to `vault/Rejected/` to discard
-
----
-
-*Generated at: {draft['generated_at']}*
-"""
-
-    output_path.write_text(content, encoding='utf-8')
-
-
-def _handle_session_expiry(vault: Path):
-    """
-    Handle WhatsApp session expiry (T032: session expiry detection).
-
-    Creates notification file in vault/Needs_Action/ and pauses polling.
-    """
-    needs_action_dir = vault / "Needs_Action"
-    needs_action_dir.mkdir(parents=True, exist_ok=True)
-
-    notification_file = needs_action_dir / "whatsapp_session_expired.md"
-
-    content = f"""---
-alert_type: session_expired
-service: whatsapp
-timestamp: {datetime.now().isoformat()}
----
-
-# WhatsApp Session Expired
-
-**Detected**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-## Issue
-WhatsApp Web session has expired. QR code re-authentication required.
-
-## Recovery Steps
-
-1. Run QR authentication script:
-   ```bash
-   python scripts/whatsapp_qr_setup.py
-   ```
-
-2. Scan QR code with WhatsApp mobile app
-
-3. Watcher will auto-resume after successful authentication
-
-## Prevention
-- WhatsApp sessions typically last several weeks
-- Keep WhatsApp mobile app active and connected
-- Avoid logging out of WhatsApp Web on other devices
-"""
-
-    notification_file.write_text(content, encoding='utf-8')
-    print(f"[whatsapp_watcher] Session expired notification created: {notification_file}")
+def detect_keywords(message: str, keywords: list) -> list:
+    msg_lower = message.lower()
+    return [kw for kw in keywords if kw.lower() in msg_lower]
 
 
 if __name__ == "__main__":
-    # Get vault path from environment or command line
-    vault_path = os.getenv("VAULT_PATH", "vault")
-    poll_interval = int(os.getenv("WHATSAPP_POLL_INTERVAL", "30"))
-
-    if len(sys.argv) > 1:
-        vault_path = sys.argv[1]
-
-    monitor_whatsapp_for_drafts(vault_path, poll_interval)
+    run()
