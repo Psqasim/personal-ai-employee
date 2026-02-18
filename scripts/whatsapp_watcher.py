@@ -159,21 +159,23 @@ def log_action(sender: str, msg: str, reply: str, urgent: bool, sent: bool):
 # ── Browser helpers ───────────────────────────────────────────────────────────
 def _make_browser(p):
     """Launch a fresh persistent context (closes after each phase).
-    --no-zygote prevents SIGTRAP crash in WSL2/Linux environments.
-    --window-size=1,1 is intentionally omitted — causes Chrome to abort on WSL2.
+    --no-zygote is WSL2-only (fixes SIGTRAP crash). On real Linux (cloud/headless)
+    it slows Chrome startup and causes 60s selector timeouts — do NOT use it there.
     """
     args = [
         "--no-sandbox",
         "--disable-dev-shm-usage",
-        "--no-zygote",            # Prevents SIGTRAP crash in WSL2
         "--disable-crash-reporter",
         "--disable-background-networking",
     ]
+    if not HEADLESS:
+        # Local WSL2: --no-zygote prevents SIGTRAP crash
+        args.append("--no-zygote")
     if HEADLESS:
         # Cloud/server: disable GPU, use SwiftShader so Chrome doesn't report
         # itself as "HeadlessChrome" (which WhatsApp blocks with "Update Chrome")
         args += ["--disable-gpu", "--enable-unsafe-swiftshader",
-                 "--disable-setuid-sandbox"]
+                 "--disable-setuid-sandbox", "--no-first-run", "--mute-audio"]
 
     # Spoof a real Chrome UA — WhatsApp blocks the default "HeadlessChrome" UA
     ua = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -190,8 +192,9 @@ def _make_browser(p):
 
 def _wait_for_whatsapp(page) -> bool:
     """Navigate to WhatsApp Web and wait for chat list. Returns False if QR shown."""
-    page.goto("https://web.whatsapp.com", wait_until="domcontentloaded", timeout=30000)
-    page.wait_for_timeout(4000)
+    page.goto("https://web.whatsapp.com", wait_until="domcontentloaded", timeout=40000)
+    # Cloud VM (headless) needs more time for JS-heavy WhatsApp Web to initialise
+    page.wait_for_timeout(20000 if HEADLESS else 4000)
     page.wait_for_selector(f'{CHAT_LIST}, {QR_CODE}', timeout=60000)
     if page.locator(QR_CODE).count() > 0:
         logger.error("QR shown — re-run setup_whatsapp_session.py")

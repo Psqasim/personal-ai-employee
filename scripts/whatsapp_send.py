@@ -58,17 +58,20 @@ def send_message(chat_id: str, message: str) -> dict:
     if not os.path.isdir(SESSION_PATH):
         return {"success": False, "error": "SESSION_EXPIRED: session dir not found"}
 
-    # WSL2-safe Chrome flags — --no-zygote prevents SIGTRAP crash
+    # --no-zygote is WSL2-only (SIGTRAP fix). On real Linux/headless it causes
+    # Chrome to slow down and WhatsApp to time out — only add it locally.
     args = [
         "--no-sandbox",
         "--disable-dev-shm-usage",
-        "--no-zygote",
         "--disable-crash-reporter",
         "--disable-extensions",
         "--disable-background-networking",
     ]
+    if not HEADLESS:
+        args.append("--no-zygote")  # WSL2 local only
     if HEADLESS:
-        args += ["--disable-gpu", "--enable-unsafe-swiftshader", "--disable-setuid-sandbox"]
+        args += ["--disable-gpu", "--enable-unsafe-swiftshader",
+                 "--disable-setuid-sandbox", "--no-first-run", "--mute-audio"]
 
     try:
         with _browser_lock(timeout=90):

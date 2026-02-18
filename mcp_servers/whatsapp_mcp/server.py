@@ -35,18 +35,19 @@ _UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
 
 def _launch_ctx(p, session_path):
     """Launch persistent context with auto headless detection.
-    --no-zygote is required to prevent SIGTRAP crash in WSL2/Linux environments.
-    --window-size=1,1 is intentionally omitted — it causes Chrome to abort on WSL2.
+    --no-zygote is WSL2-only (SIGTRAP fix). On real Linux (cloud headless mode)
+    it slows Chrome and causes WhatsApp selector timeouts — skip it there.
     """
     args = [
         "--no-sandbox",
         "--disable-dev-shm-usage",
-        "--no-zygote",            # Prevents SIGTRAP crash in WSL2
         "--disable-crash-reporter",
         "--disable-background-networking",
     ]
+    if not HEADLESS:
+        args.append("--no-zygote")  # WSL2 local only
     if HEADLESS:
-        args += _HEADLESS_ARGS
+        args += _HEADLESS_ARGS + ["--no-first-run", "--mute-audio"]
     return p.chromium.launch_persistent_context(
         user_data_dir=session_path,
         headless=HEADLESS,
