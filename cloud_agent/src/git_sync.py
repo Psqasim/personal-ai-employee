@@ -65,35 +65,40 @@ class CloudGitSync:
 
     def _pull_code_updates(self) -> bool:
         """
-        Pull latest code from GitHub using HTTPS.
-        SSH is NOT used here — the cloud VM has no SSH keys configured.
-        Uses --rebase so any local vault commits are replayed on top of remote.
+        Pull latest code from GitHub using HTTPS (fetch + ff-only merge).
+        Two-step avoids 'Cannot rebase onto multiple branches' that happens
+        when FETCH_HEAD accumulates entries from multiple prior fetches.
+        ff-only is safe: code files never diverge on the cloud VM.
         """
         try:
-            result = subprocess.run(
-                ["git", "pull", HTTPS_REMOTE, "main", "--rebase"],
+            fetch = subprocess.run(
+                ["git", "fetch", HTTPS_REMOTE, "main"],
                 cwd=str(project_root),
                 capture_output=True,
                 text=True,
                 timeout=60,
             )
-            if result.returncode == 0:
-                output = result.stdout.strip()
+            if fetch.returncode != 0:
+                logger.warning(f"⚠️  Code fetch failed: {fetch.stderr.strip()[:200]}")
+                return False
+
+            merge = subprocess.run(
+                ["git", "merge", "FETCH_HEAD", "--ff-only"],
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if merge.returncode == 0:
+                output = merge.stdout.strip()
                 if "Already up to date" not in output and output:
                     logger.info(f"✅ Code pull: {output}")
                 return True
             else:
-                stderr = result.stderr.strip()
-                logger.warning(f"⚠️  Code pull skipped: {stderr[:200]}")
-                # Abort rebase if it got stuck
-                subprocess.run(
-                    ["git", "rebase", "--abort"],
-                    cwd=str(project_root),
-                    capture_output=True,
-                )
+                logger.warning(f"⚠️  Code merge skipped: {merge.stderr.strip()[:200]}")
                 return False
         except subprocess.TimeoutExpired:
-            logger.warning("Code pull timed out after 60s")
+            logger.warning("Code pull timed out")
             return False
         except Exception as e:
             logger.warning(f"Code pull error: {e}")
