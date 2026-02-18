@@ -28,10 +28,13 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 _IS_WSL2 = os.path.exists("/proc/version") and \
     "microsoft" in open("/proc/version").read().lower()
 
+# WSL2: PM2 subprocesses don't inherit DISPLAY from the user shell.
+# Force DISPLAY=:0 so headed Chrome can reach WSLg display server.
+if _IS_WSL2 and not os.getenv("DISPLAY"):
+    os.environ["DISPLAY"] = ":0"
+
 # Headless: explicit override > no DISPLAY.
-# WSL2 EXCEPTION: PM2 subprocesses don't inherit DISPLAY, but WSL2 always has
-# a display via WSLg. --no-zygote + --disable-gpu crashes Chrome on WSL2, so
-# never run headless on WSL2 unless explicitly forced.
+# WSL2 EXCEPTION: never run headless on WSL2 (--no-zygote + --disable-gpu crashes).
 HEADLESS = (
     os.getenv("PLAYWRIGHT_HEADLESS", "").lower() in ("1", "true", "yes")
     or (not os.getenv("DISPLAY") and not _IS_WSL2)
@@ -40,12 +43,34 @@ _HEADLESS_ARGS = ["--disable-gpu", "--enable-unsafe-swiftshader", "--disable-set
 _UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36")
 
+
+def _cleanup_stale_chrome_locks(session_path: str) -> None:
+    """Remove stale Chrome singleton files left by crashed sessions.
+
+    Without this, every Chrome crash leaves behind SingletonLock/SingletonSocket
+    files. The next Chrome launch finds them, tries to contact the dead process,
+    fails, and crashes with SIGTRAP — a self-perpetuating crash loop.
+    """
+    import glob
+    import shutil
+    for name in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
+        p = os.path.join(session_path, name)
+        if os.path.exists(p) or os.path.islink(p):
+            try:
+                os.unlink(p)
+            except Exception:
+                pass
+    for d in glob.glob("/tmp/org.chromium.Chromium.*"):
+        shutil.rmtree(d, ignore_errors=True)
+
+
 def _launch_ctx(p, session_path):
     """Launch persistent context with auto headless detection.
     --no-zygote: WSL2 needs it (prevents SIGTRAP) regardless of headless mode.
     Real Linux (Oracle Cloud) must NOT have it — causes Chrome startup slowdown
     that makes WhatsApp Web time out.
     """
+    _cleanup_stale_chrome_locks(session_path)  # prevent crash-loop from stale locks
     args = [
         "--no-sandbox",
         "--disable-dev-shm-usage",
