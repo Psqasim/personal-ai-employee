@@ -101,7 +101,7 @@ def _browser_lock(timeout: int = 90):
 def generate_reply(sender: str, message: str) -> str:
     try:
         import anthropic
-        client = anthropic.Anthropic(api_key=os.getenv("CLAUDE_API_KEY"))
+        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
         resp = client.messages.create(
             model=CLAUDE_MODEL,
             max_tokens=200,
@@ -158,10 +158,16 @@ def log_action(sender: str, msg: str, reply: str, urgent: bool, sent: bool):
 
 # ── Browser helpers ───────────────────────────────────────────────────────────
 def _make_browser(p):
-    """Launch a fresh persistent context (closes after each phase)."""
+    """Launch a fresh persistent context (closes after each phase).
+    --no-zygote prevents SIGTRAP crash in WSL2/Linux environments.
+    --window-size=1,1 is intentionally omitted — causes Chrome to abort on WSL2.
+    """
     args = [
-        "--no-sandbox", "--disable-dev-shm-usage",
-        "--window-size=1,1", "--window-position=0,0",
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--no-zygote",            # Prevents SIGTRAP crash in WSL2
+        "--disable-crash-reporter",
+        "--disable-background-networking",
     ]
     if HEADLESS:
         # Cloud/server: disable GPU, use SwiftShader so Chrome doesn't report
