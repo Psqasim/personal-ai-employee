@@ -16,9 +16,10 @@ BROWSER_LOCK_FILE = "/tmp/whatsapp_browser.lock"
 SESSION_PATH = os.getenv("WHATSAPP_SESSION_PATH", os.path.expanduser("~/.whatsapp_session_dir"))
 _IS_WSL2 = os.path.exists("/proc/version") and \
     "microsoft" in open("/proc/version").read().lower()
-# WSL2 EXCEPTION: PM2 subprocesses don't inherit DISPLAY, but WSL2 always has
-# a display via WSLg. --no-zygote + --disable-gpu crashes Chrome on WSL2, so
-# never run headless on WSL2 unless explicitly forced via PLAYWRIGHT_HEADLESS.
+# WSL2: PM2 subprocesses don't inherit DISPLAY — force it so headed Chrome works.
+if _IS_WSL2 and not os.getenv("DISPLAY"):
+    os.environ["DISPLAY"] = ":0"
+# Headless: explicit override > no DISPLAY. Never headless on WSL2 (--no-zygote conflicts).
 HEADLESS = (
     os.getenv("PLAYWRIGHT_HEADLESS", "").lower() in ("1", "true", "yes")
     or (not os.getenv("DISPLAY") and not _IS_WSL2)
@@ -57,14 +58,26 @@ def _browser_lock(timeout=90):
         lf.close()
 
 
+def _cleanup_stale_chrome_locks(session_path: str) -> None:
+    """Remove stale Chrome singleton files left by crashed sessions."""
+    import glob, shutil
+    for name in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
+        p = os.path.join(session_path, name)
+        if os.path.exists(p) or os.path.islink(p):
+            try: os.unlink(p)
+            except Exception: pass
+    for d in glob.glob("/tmp/org.chromium.Chromium.*"):
+        shutil.rmtree(d, ignore_errors=True)
+
+
 def send_message(chat_id: str, message: str) -> dict:
     from playwright.sync_api import sync_playwright
 
     if not os.path.isdir(SESSION_PATH):
         return {"success": False, "error": "SESSION_EXPIRED: session dir not found"}
 
-    # --no-zygote is WSL2-only (SIGTRAP fix). On real Linux/headless it causes
-    # Chrome to slow down and WhatsApp to time out — only add it locally.
+    _cleanup_stale_chrome_locks(SESSION_PATH)  # prevent SIGTRAP crash-loop
+
     args = [
         "--no-sandbox",
         "--disable-dev-shm-usage",
