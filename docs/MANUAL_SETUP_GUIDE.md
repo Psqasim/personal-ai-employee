@@ -814,6 +814,45 @@ ssh -i ~/.ssh/ssh-key-2026-02-17.key ubuntu@129.151.151.212 \
   "pm2 list --no-color && echo '---WATCHER---' && pm2 logs whatsapp_watcher --lines 20 --nostream --no-color 2>&1 | tail -20"
 ```
 
+### 10.7 Verify git_sync Auto-Pull is Working
+
+`git_sync_cloud` now pulls code from GitHub every 60 seconds automatically.
+You do NOT need to SSH and `git pull` manually anymore.
+
+**How to check:**
+
+```bash
+# SSH into VM and check git_sync logs
+ssh -i ~/.ssh/ssh-key-2026-02-17.key ubuntu@129.151.151.212 \
+  "grep 'Code pull\|Code fetch\|Code merge' ~/.pm2/logs/git_sync_cloud-error.log | tail -10"
+```
+
+**What the log messages mean:**
+
+| Log message | Meaning |
+|---|---|
+| `✅ Code pull: Updating abc123..def456` | New code was pulled from GitHub — lists which files changed |
+| `✅ Code pull: Fast-forward` | Same as above (fast-forward merge) |
+| *(no Code pull line)* | No new code on GitHub — `Already up to date` (normal, silent) |
+| `⚠️ Code fetch failed: ...` | Network issue — will retry next cycle (60s) |
+| `⚠️ Code merge skipped: ...` | Local commits diverged — rare, check manually |
+
+**Expected flow after you push new code:**
+1. You push from local: `git push origin main`
+2. Within 60 seconds, cloud VM git_sync logs: `✅ Code pull: Updating ... 3 files changed`
+3. **Then restart the affected PM2 process** so it picks up the new code in memory:
+   ```bash
+   ssh -i ~/.ssh/ssh-key-2026-02-17.key ubuntu@129.151.151.212 \
+     "pm2 restart whatsapp_watcher --update-env"
+   ```
+   > Note: git_sync pulls code to disk automatically, but PM2 processes run from memory.
+   > They only load the new code when restarted. You need to restart after a code deploy.
+
+**Why we had to manually pull once (history):**
+The git_sync HTTPS-pull feature was itself the fix for the broken sync. Since git_sync
+couldn't pull before being fixed, we had to manually `git pull` once to deploy the fix.
+After that first manual pull, everything is automatic.
+
 ---
 
 ## Quick Reference Card
