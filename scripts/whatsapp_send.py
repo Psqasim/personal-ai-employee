@@ -18,6 +18,8 @@ HEADLESS = (
     os.getenv("PLAYWRIGHT_HEADLESS", "").lower() in ("1", "true", "yes")
     or not os.getenv("DISPLAY")
 )
+_IS_WSL2 = os.path.exists("/proc/version") and \
+    "microsoft" in open("/proc/version").read().lower()
 UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36")
 
@@ -67,8 +69,8 @@ def send_message(chat_id: str, message: str) -> dict:
         "--disable-extensions",
         "--disable-background-networking",
     ]
-    if not HEADLESS:
-        args.append("--no-zygote")  # WSL2 local only
+    if _IS_WSL2:
+        args.append("--no-zygote")  # WSL2 only — fixes SIGTRAP crash
     if HEADLESS:
         args += ["--disable-gpu", "--enable-unsafe-swiftshader",
                  "--disable-setuid-sandbox", "--no-first-run", "--mute-audio"]
