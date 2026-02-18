@@ -15,11 +15,53 @@ export function ApprovalCard({ item, userRole, onApprove, onReject }: ApprovalCa
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [expanded, setExpanded] = useState(false);
+  const [sendStatus, setSendStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [sendError, setSendError] = useState("");
+
+  const isWhatsApp = item.category === "WhatsApp";
 
   const handleApprove = async () => {
     if (userRole !== "admin") return;
     setLoading(true);
     await onApprove?.(item.filePath);
+    setLoading(false);
+  };
+
+  const handleApproveAndSend = async () => {
+    if (userRole !== "admin") return;
+    const chatId = item.metadata?.chat_id || item.metadata?.to || "";
+    const message = item.content?.trim() || item.preview;
+    if (!chatId || !message) {
+      setSendError("Missing chat_id or message in item metadata");
+      setSendStatus("error");
+      return;
+    }
+
+    setLoading(true);
+    setSendStatus("sending");
+    setSendError("");
+
+    // First approve (move file to Approved/)
+    await onApprove?.(item.filePath);
+
+    // Then send via WhatsApp
+    try {
+      const res = await fetch("/api/whatsapp/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId, message }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSendStatus("sent");
+      } else {
+        setSendStatus("error");
+        setSendError(data.error || "Send failed");
+      }
+    } catch (e: any) {
+      setSendStatus("error");
+      setSendError(e?.message || "Network error");
+    }
     setLoading(false);
   };
 
@@ -86,21 +128,43 @@ export function ApprovalCard({ item, userRole, onApprove, onReject }: ApprovalCa
         )}
 
         {userRole === "admin" && (
-          <div className="flex gap-3">
-            <button
-              onClick={handleApprove}
-              disabled={loading}
-              className="flex-1 min-h-[44px] bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? "Processing..." : "✓ Approve"}
-            </button>
-            <button
-              onClick={() => setShowRejectModal(true)}
-              disabled={loading}
-              className="flex-1 min-h-[44px] bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              ✗ Reject
-            </button>
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-3">
+              {isWhatsApp ? (
+                <button
+                  onClick={handleApproveAndSend}
+                  disabled={loading || sendStatus === "sent"}
+                  className="flex-1 min-h-[44px] bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {sendStatus === "sending"
+                    ? "Sending..."
+                    : sendStatus === "sent"
+                    ? "✓ Sent!"
+                    : "✓ Approve & Send"}
+                </button>
+              ) : (
+                <button
+                  onClick={handleApprove}
+                  disabled={loading}
+                  className="flex-1 min-h-[44px] bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? "Processing..." : "✓ Approve"}
+                </button>
+              )}
+              <button
+                onClick={() => setShowRejectModal(true)}
+                disabled={loading}
+                className="flex-1 min-h-[44px] bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                ✗ Reject
+              </button>
+            </div>
+            {sendStatus === "error" && sendError && (
+              <p className="text-xs text-red-600 dark:text-red-400">{sendError}</p>
+            )}
+            {sendStatus === "sent" && (
+              <p className="text-xs text-green-600 dark:text-green-400">Message sent via WhatsApp</p>
+            )}
           </div>
         )}
 
