@@ -14,12 +14,15 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 BROWSER_LOCK_FILE = "/tmp/whatsapp_browser.lock"
 SESSION_PATH = os.getenv("WHATSAPP_SESSION_PATH", os.path.expanduser("~/.whatsapp_session_dir"))
-HEADLESS = (
-    os.getenv("PLAYWRIGHT_HEADLESS", "").lower() in ("1", "true", "yes")
-    or not os.getenv("DISPLAY")
-)
 _IS_WSL2 = os.path.exists("/proc/version") and \
     "microsoft" in open("/proc/version").read().lower()
+# WSL2 EXCEPTION: PM2 subprocesses don't inherit DISPLAY, but WSL2 always has
+# a display via WSLg. --no-zygote + --disable-gpu crashes Chrome on WSL2, so
+# never run headless on WSL2 unless explicitly forced via PLAYWRIGHT_HEADLESS.
+HEADLESS = (
+    os.getenv("PLAYWRIGHT_HEADLESS", "").lower() in ("1", "true", "yes")
+    or (not os.getenv("DISPLAY") and not _IS_WSL2)
+)
 UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36")
 
