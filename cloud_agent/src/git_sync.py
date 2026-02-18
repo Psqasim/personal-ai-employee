@@ -1,13 +1,20 @@
 """
 Cloud Agent - Git Sync Service
-60s cycle: add all changes → commit → push to remote
+60s cycle: pull code updates → add vault changes → commit → push to remote
+
+Pull uses HTTPS (cloud VM has no SSH keys configured).
+Push uses GIT_REMOTE_URL from env (SSH or HTTPS, set in .env.cloud).
 """
 import os
 import sys
 import time
 import logging
+import subprocess
 from pathlib import Path
 from datetime import datetime
+
+# HTTPS URL for pulling code updates — works without SSH keys on cloud VM
+HTTPS_REMOTE = "https://github.com/Psqasim/personal-ai-employee.git"
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -56,13 +63,55 @@ class CloudGitSync:
             logger.error(f"Failed to initialize Git manager: {e}")
             sys.exit(1)
 
+    def _pull_code_updates(self) -> bool:
+        """
+        Pull latest code from GitHub using HTTPS.
+        SSH is NOT used here — the cloud VM has no SSH keys configured.
+        Uses --rebase so any local vault commits are replayed on top of remote.
+        """
+        try:
+            result = subprocess.run(
+                ["git", "pull", HTTPS_REMOTE, "main", "--rebase"],
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if result.returncode == 0:
+                output = result.stdout.strip()
+                if "Already up to date" not in output and output:
+                    logger.info(f"✅ Code pull: {output}")
+                return True
+            else:
+                stderr = result.stderr.strip()
+                logger.warning(f"⚠️  Code pull skipped: {stderr[:200]}")
+                # Abort rebase if it got stuck
+                subprocess.run(
+                    ["git", "rebase", "--abort"],
+                    cwd=str(project_root),
+                    capture_output=True,
+                )
+                return False
+        except subprocess.TimeoutExpired:
+            logger.warning("Code pull timed out after 60s")
+            return False
+        except Exception as e:
+            logger.warning(f"Code pull error: {e}")
+            return False
+
     def sync_cycle(self) -> bool:
         """
-        Single sync cycle: commit all changes + push to remote
+        Single sync cycle:
+          1. Pull latest code from GitHub (HTTPS, no SSH keys needed)
+          2. Commit vault changes
+          3. Push to remote
 
         Returns:
             True if sync succeeded, False otherwise
         """
+        # Step 1: pull code updates every cycle so deployed code stays current
+        self._pull_code_updates()
+
         try:
             # Summarize changes for commit message
             summary = self._summarize_changes()
