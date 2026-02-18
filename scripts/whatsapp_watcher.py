@@ -51,6 +51,10 @@ CLAUDE_MODEL   = "claude-haiku-4-5-20251001"
 CHATS_TO_CHECK = 5
 # Oracle Cloud = headless=True (real Linux), local WSL2 = headless=False
 HEADLESS       = os.getenv("PLAYWRIGHT_HEADLESS", "false").lower() == "true"
+# WSL2 needs --no-zygote (SIGTRAP fix) regardless of headless mode.
+# Real Linux (Oracle Cloud) must NOT use it — causes Chrome startup slowdown.
+_IS_WSL2 = os.path.exists("/proc/version") and \
+    "microsoft" in open("/proc/version").read().lower()
 
 URGENT_KEYWORDS = [
     "urgent", "emergency", "asap", "help", "problem", "error",
@@ -168,8 +172,8 @@ def _make_browser(p):
         "--disable-crash-reporter",
         "--disable-background-networking",
     ]
-    if not HEADLESS:
-        # Local WSL2: --no-zygote prevents SIGTRAP crash
+    if _IS_WSL2:
+        # WSL2: --no-zygote prevents SIGTRAP crash (needed even in headless mode)
         args.append("--no-zygote")
     if HEADLESS:
         # Cloud/server: disable GPU, use SwiftShader so Chrome doesn't report

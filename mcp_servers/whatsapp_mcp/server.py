@@ -29,14 +29,18 @@ HEADLESS = (
     os.getenv("PLAYWRIGHT_HEADLESS", "").lower() in ("1", "true", "yes")
     or not os.getenv("DISPLAY")
 )
+# WSL2 detection: /proc/version contains "microsoft" on WSL2, not on real Linux
+_IS_WSL2 = os.path.exists("/proc/version") and \
+    "microsoft" in open("/proc/version").read().lower()
 _HEADLESS_ARGS = ["--disable-gpu", "--enable-unsafe-swiftshader", "--disable-setuid-sandbox"]
 _UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36")
 
 def _launch_ctx(p, session_path):
     """Launch persistent context with auto headless detection.
-    --no-zygote is WSL2-only (SIGTRAP fix). On real Linux (cloud headless mode)
-    it slows Chrome and causes WhatsApp selector timeouts — skip it there.
+    --no-zygote: WSL2 needs it (prevents SIGTRAP) regardless of headless mode.
+    Real Linux (Oracle Cloud) must NOT have it — causes Chrome startup slowdown
+    that makes WhatsApp Web time out.
     """
     args = [
         "--no-sandbox",
@@ -44,8 +48,8 @@ def _launch_ctx(p, session_path):
         "--disable-crash-reporter",
         "--disable-background-networking",
     ]
-    if not HEADLESS:
-        args.append("--no-zygote")  # WSL2 local only
+    if _IS_WSL2:
+        args.append("--no-zygote")  # WSL2 only — fixes SIGTRAP crash
     if HEADLESS:
         args += _HEADLESS_ARGS + ["--no-first-run", "--mute-audio"]
     return p.chromium.launch_persistent_context(
