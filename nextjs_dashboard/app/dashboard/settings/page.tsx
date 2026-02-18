@@ -45,7 +45,7 @@ export default function SettingsPage() {
     if (status === "authenticated") {
       const userRole = (session?.user as any)?.role;
       if (userRole !== "admin") {
-        router.push("/dashboard");
+        // Don't auto-redirect — show access denied UI instead
       } else {
         fetchUsers();
       }
@@ -142,6 +142,28 @@ export default function SettingsPage() {
 
   if (!session) {
     return null;
+  }
+
+  const currentRole = (session.user as any)?.role;
+  if (currentRole !== "admin") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4">
+        <div className="text-center max-w-sm">
+          <div className="text-6xl mb-5">🔒</div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Access Denied</h1>
+          <p className="text-gray-500 dark:text-gray-400 text-sm mb-6">
+            Settings are only available to administrators. Your current role is{" "}
+            <span className="font-semibold text-gray-700 dark:text-gray-300">{currentRole}</span>.
+          </p>
+          <a
+            href="/dashboard"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl shadow transition-all"
+          >
+            ← Back to Dashboard
+          </a>
+        </div>
+      </div>
+    );
   }
 
   return (

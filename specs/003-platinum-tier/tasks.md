@@ -165,12 +165,12 @@
 - [ ] T054 [US2] Implement Approve button handler: POST to /api/approve, show loading spinner, update UI to "Approved - Sending...", auto-remove card after 3s (M)
 - [ ] T055 [US2] Implement Reject button handler: POST to /api/reject with optional reason text input, update UI to "Rejected", remove card (M)
 - [ ] T056 [US2] Implement mobile-responsive layout with Tailwind CSS (cards stack vertically <768px, buttons ≥44px touch target, no horizontal scroll) (M)
-- [ ] T057 [P] [US2] Implement DarkModeToggle.tsx component (localStorage persistence, Tailwind dark: classes, theme switch <200ms) (S)
+- [X] T057 [P] [US2] Implement DarkModeToggle.tsx component (localStorage persistence, Tailwind dark: classes, theme switch <200ms) (S)
 - [ ] T058 [US2] Create Tailwind config in tailwind.config.js with dark mode colors (bg-[#1e1e1e], text-[#e0e0e0], cards bg-[#2d2d2d]) (S)
 - [ ] T059 [US2] Implement simple password authentication in app/api/auth/login/route.ts (bcrypt.compare password, set session cookie 7-day expiry) (M)
 - [ ] T060 [US2] Create middleware.ts to redirect unauthenticated users to /login (check session cookie, verify NEXT_AUTH_ENABLED=true) (M)
 - [ ] T061 [P] [US2] Create login page UI in app/login/page.tsx (username/password form, submit to /api/auth/login) (S)
-- [ ] T062 [US2] Implement offline fallback page in app/offline/page.tsx (cached message: "Dashboard offline - use Obsidian at {VAULT_PATH}") (S)
+- [X] T062 [US2] Implement offline fallback page in app/offline/page.tsx (cached message: "Dashboard offline - use Obsidian at {VAULT_PATH}") (S)
 
 ### Integration Tests for User Story 2
 
@@ -192,10 +192,10 @@
 ### Implementation for User Story 8
 
 - [ ] T065 [P] [US8] Create API route /api/health in app/api/health/route.ts (poll MCP servers, return status grid: mcp_name, status, last_call_timestamp) (M)
-- [ ] T066 [P] [US8] Create API route /api/api-usage in app/api/api-usage/route.ts (read vault/Logs/API_Usage/*.md, aggregate daily/weekly/monthly costs) (M)
+- [X] T066 [P] [US8] Create API route /api/api-usage in app/api/api-usage/route.ts (read vault/Logs/API_Usage/*.md, aggregate daily/weekly/monthly costs) (M)
 - [ ] T067 [US8] Implement api-usage.ts utility in lib/api-usage.ts (parse YAML frontmatter from API_Usage logs, calculate totals, cost formula) (M)
 - [ ] T068 [P] [US8] Create MCPHealthGrid.tsx component in components/ (grid layout: MCP name, ✓/✗ status, last call, Test button) (M)
-- [ ] T069 [P] [US8] Create APIUsageChart.tsx component using Recharts (bar chart: daily cost for last 7 days, data from /api/api-usage) (M)
+- [X] T069 [P] [US8] Create APIUsageChart.tsx component using Recharts (bar chart: daily cost for last 7 days, data from /api/api-usage) (M)
 - [ ] T070 [US8] Integrate API usage logging in cloud_agent/src/orchestrator.py (log every Claude API call: timestamp, model, tokens, cost to vault/Logs/API_Usage/YYYY-MM-DD.md) (M)
 - [ ] T071 [P] [US8] Integrate API usage logging in local_agent/src/orchestrator.py (same logging format, agent_id="local") (M)
 - [ ] T072 [US8] Implement MCP health check in local_agent/src/executors/ (ping Email/WhatsApp/LinkedIn/Odoo MCPs, update vault/Logs/MCP_Health/{mcp}.md with status, last_call) (M)

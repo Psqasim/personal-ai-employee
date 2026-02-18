@@ -2,6 +2,31 @@ import fs from "fs";
 import path from "path";
 import matter from "gray-matter";
 
+/**
+ * Safely parse a markdown file with YAML frontmatter.
+ * Falls back to extracting body text when YAML is malformed
+ * (e.g. retry files with raw browser logs in error: field).
+ */
+function safeMatter(rawContent: string): { data: Record<string, any>; content: string } {
+  try {
+    return matter(rawContent);
+  } catch {
+    // Fallback: strip frontmatter block, treat body as content
+    const fmMatch = rawContent.match(/^---[\r\n]([\s\S]*?)[\r\n]---[\r\n]?([\s\S]*)$/);
+    if (fmMatch) {
+      const body = fmMatch[2] || "";
+      // Try to salvage simple key: value lines from frontmatter
+      const data: Record<string, any> = {};
+      for (const line of fmMatch[1].split("\n")) {
+        const m = line.match(/^(\w+):\s*["']?([^"'\n]+)["']?\s*$/);
+        if (m) data[m[1]] = m[2].trim();
+      }
+      return { data, content: body };
+    }
+    return { data: {}, content: rawContent };
+  }
+}
+
 export interface ApprovalItem {
   id: string;
   category: "Email" | "LinkedIn" | "Odoo" | "WhatsApp" | "Facebook" | "Instagram" | "Twitter";
@@ -38,7 +63,7 @@ export function getPendingApprovals(): ApprovalItem[] {
           const filePath = path.join(categoryPath, file);
           const stat = fs.statSync(filePath);
           const content = fs.readFileSync(filePath, "utf-8");
-          const { data, content: bodyContent } = matter(content);
+          const { data, content: bodyContent } = safeMatter(content);
 
           items.push({
             id: path.basename(file, ".md"),
@@ -108,7 +133,7 @@ export function rejectItem(filePath: string, reason?: string): boolean {
     if (reason) {
       try {
         const content = fs.readFileSync(sourcePath, "utf-8");
-        const { data, content: bodyContent } = matter(content);
+        const { data, content: bodyContent } = safeMatter(content);
         data.rejection_reason = reason;
         data.rejected_at = new Date().toISOString();
         const newContent = matter.stringify(bodyContent, data);
@@ -311,7 +336,7 @@ function readItemsFromDirectory(dirPath: string, relativePath: string): Approval
       } else if (entry.endsWith(".md")) {
         try {
           const content = fs.readFileSync(fullPath, "utf-8");
-          const { data, content: bodyContent } = matter(content);
+          const { data, content: bodyContent } = safeMatter(content);
 
           // Determine category from path
           const pathParts = relativePath.split(path.sep);

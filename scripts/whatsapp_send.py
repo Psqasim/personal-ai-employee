@@ -58,8 +58,15 @@ def send_message(chat_id: str, message: str) -> dict:
     if not os.path.isdir(SESSION_PATH):
         return {"success": False, "error": "SESSION_EXPIRED: session dir not found"}
 
-    args = ["--no-sandbox", "--disable-dev-shm-usage",
-            "--window-size=1,1", "--window-position=0,0"]
+    # WSL2-safe Chrome flags — --no-zygote prevents SIGTRAP crash
+    args = [
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--no-zygote",
+        "--disable-crash-reporter",
+        "--disable-extensions",
+        "--disable-background-networking",
+    ]
     if HEADLESS:
         args += ["--disable-gpu", "--enable-unsafe-swiftshader", "--disable-setuid-sandbox"]
 
