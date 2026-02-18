@@ -315,6 +315,12 @@ def run_cycle():
         logger.info(f"💬 {sender} → {reply[:60]}")
         pending.append((sender, last_msg, reply))
 
+    # Give Chrome time to finish flushing the Phase-1 profile to disk.
+    # On Oracle Free Tier (slow I/O), opening Chrome too quickly after Phase-1
+    # closes causes the profile dir to be in a partial-write state → Phase-3
+    # Chrome never fully initialises → WhatsApp Web never loads → 60s timeout.
+    time.sleep(10)
+
     # ── Phase 3: Send (locked) ────────────────────────────────────────────────
     try:
         with _browser_lock():
