@@ -34,9 +34,17 @@ _UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36")
 
 def _launch_ctx(p, session_path):
-    """Launch persistent context with auto headless detection."""
-    args = ["--no-sandbox", "--disable-dev-shm-usage",
-            "--window-size=1,1", "--window-position=0,0"]
+    """Launch persistent context with auto headless detection.
+    --no-zygote is required to prevent SIGTRAP crash in WSL2/Linux environments.
+    --window-size=1,1 is intentionally omitted — it causes Chrome to abort on WSL2.
+    """
+    args = [
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--no-zygote",            # Prevents SIGTRAP crash in WSL2
+        "--disable-crash-reporter",
+        "--disable-background-networking",
+    ]
     if HEADLESS:
         args += _HEADLESS_ARGS
     return p.chromium.launch_persistent_context(
