@@ -23,6 +23,30 @@ from datetime import datetime
 from typing import Dict, Any
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
+# ── Headless detection ────────────────────────────────────────────────────────
+# Use headless if explicitly set, OR if no DISPLAY (WSL2 without WSLg)
+HEADLESS = (
+    os.getenv("PLAYWRIGHT_HEADLESS", "").lower() in ("1", "true", "yes")
+    or not os.getenv("DISPLAY")
+)
+_HEADLESS_ARGS = ["--disable-gpu", "--enable-unsafe-swiftshader", "--disable-setuid-sandbox"]
+_UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+       "(KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36")
+
+def _launch_ctx(p, session_path):
+    """Launch persistent context with auto headless detection."""
+    args = ["--no-sandbox", "--disable-dev-shm-usage",
+            "--window-size=1,1", "--window-position=0,0"]
+    if HEADLESS:
+        args += _HEADLESS_ARGS
+    return p.chromium.launch_persistent_context(
+        user_data_dir=session_path,
+        headless=HEADLESS,
+        args=args,
+        user_agent=_UA,
+        viewport={"width": 1280, "height": 800},
+    )
+
 # ── Shared browser lock (same file as whatsapp_watcher.py) ────────────────────
 BROWSER_LOCK_FILE = "/tmp/whatsapp_browser.lock"
 
@@ -124,19 +148,8 @@ def send_message(chat_id: str, message: str) -> Dict[str, Any]:
         with _browser_lock(timeout=90):
             with sync_playwright() as p:
                 # Use launch_persistent_context — preserves IndexedDB + ServiceWorkers
-                # (storage_state JSON only saves cookies/localStorage, not enough for WhatsApp)
-                # WSL2: headless=True hangs; headed via WSLg display works.
-                context = p.chromium.launch_persistent_context(
-                    user_data_dir=session_path,
-                    headless=False,
-                    args=[
-                        "--no-sandbox",
-                        "--disable-dev-shm-usage",
-                        "--window-size=1,1",
-                        "--window-position=0,0",
-                    ],
-                    viewport={"width": 1280, "height": 800},
-                )
+                # Auto-detects headless (WSL2 no-display) via _launch_ctx()
+                context = _launch_ctx(p, session_path)
                 page = context.new_page()
 
                 # domcontentloaded fires fast; WhatsApp JS needs extra time to render UI
@@ -201,13 +214,7 @@ def get_messages(limit: int = 10) -> Dict[str, Any]:
     try:
         with _browser_lock(timeout=90):
             with sync_playwright() as p:
-                context = p.chromium.launch_persistent_context(
-                    user_data_dir=session_path,
-                    headless=False,
-                    args=["--no-sandbox", "--disable-dev-shm-usage",
-                          "--window-size=1,1", "--window-position=0,0"],
-                    viewport={"width": 1280, "height": 800},
-                )
+                context = _launch_ctx(p, session_path)
                 page = context.new_page()
                 page.goto('https://web.whatsapp.com', wait_until='domcontentloaded', timeout=30000)
                 page.wait_for_timeout(4000)
@@ -301,13 +308,7 @@ def process_inbox(replies: Dict[str, str]) -> Dict[str, Any]:
     try:
         with _browser_lock(timeout=90):
             with sync_playwright() as p:
-                context = p.chromium.launch_persistent_context(
-                    user_data_dir=session_path,
-                    headless=False,
-                    args=["--no-sandbox", "--disable-dev-shm-usage",
-                          "--window-size=1,1", "--window-position=0,0"],
-                    viewport={"width": 1280, "height": 800},
-                )
+                context = _launch_ctx(p, session_path)
                 page = context.new_page()
                 page.goto('https://web.whatsapp.com', wait_until='domcontentloaded', timeout=30000)
                 page.wait_for_timeout(4000)
