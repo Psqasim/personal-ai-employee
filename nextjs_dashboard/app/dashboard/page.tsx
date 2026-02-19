@@ -9,6 +9,7 @@ import { VaultBrowser } from "@/components/VaultBrowser";
 import { CreateTaskModal } from "@/components/CreateTaskModal";
 import { DarkModeToggle } from "@/components/DarkModeToggle";
 import { APIUsageChart } from "@/components/APIUsageChart";
+import { LinkedInPostModal } from "@/components/LinkedInPostModal";
 import { ApprovalItem, VaultSection } from "@/lib/vault";
 
 export default function DashboardPage() {
@@ -19,6 +20,7 @@ export default function DashboardPage() {
   const [vaultSections, setVaultSections] = useState<VaultSection[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showLinkedIn, setShowLinkedIn] = useState(false);
   const [showChart, setShowChart] = useState(false);
   const [showVault, setShowVault] = useState(false);
 
@@ -141,6 +143,12 @@ export default function DashboardPage() {
             <DarkModeToggle />
             {userRole === "admin" && (
               <>
+                <button
+                  onClick={() => setShowLinkedIn(true)}
+                  className="hidden sm:flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-800 text-white text-xs font-semibold transition-colors"
+                >
+                  🔗 LinkedIn
+                </button>
                 <button
                   onClick={() => setShowCreateModal(true)}
                   className="hidden sm:flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors"
@@ -287,6 +295,14 @@ export default function DashboardPage() {
           isOpen={showCreateModal}
           onClose={() => setShowCreateModal(false)}
           onSuccess={fetchStatus}
+        />
+      )}
+
+      {/* LinkedIn Post Modal */}
+      {userRole === "admin" && (
+        <LinkedInPostModal
+          isOpen={showLinkedIn}
+          onClose={() => setShowLinkedIn(false)}
         />
       )}
     </div>
