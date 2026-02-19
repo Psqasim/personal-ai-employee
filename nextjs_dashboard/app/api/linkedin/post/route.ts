@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import Anthropic from "@anthropic-ai/sdk";
+import axios from "axios";
+import https from "https";
+
+// Force IPv4 — WSL2 Node.js gets AggregateError when IPv6 + IPv4 both attempted
+const ipv4Agent = new https.Agent({ family: 4 });
 
 const anthropic = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
 
@@ -8,7 +13,7 @@ const LI_TOKEN = process.env.LINKEDIN_ACCESS_TOKEN!;
 const LI_URN   = process.env.LINKEDIN_AUTHOR_URN!;
 const LI_VER   = "202601";
 
-function liHeaders(extra: Record<string,string> = {}) {
+function liHeaders(extra: Record<string, string> = {}) {
   return {
     Authorization: `Bearer ${LI_TOKEN}`,
     "LinkedIn-Version": LI_VER,
@@ -43,46 +48,42 @@ Return ONLY the post text, no extra commentary.`,
     ],
   });
 
-  const text = msg.content[0].type === "text" ? msg.content[0].text : "";
+  let text = msg.content[0].type === "text" ? msg.content[0].text : "";
+  // Strip any preamble Claude sometimes adds before the actual post
+  text = text.replace(/^(here'?s?\s+(your\s+)?linkedin\s+post[:\s\-—]*\n*)/i, "").trim();
+  text = text.replace(/^---\n*/m, "").trim();
   return text.slice(0, 3000);
 }
 
-// ── Upload image to LinkedIn (2-step) ───────────────────────────────────────
+// ── Upload image to LinkedIn (2-step, using axios) ───────────────────────────
 async function uploadImage(imageBase64: string, mimeType: string): Promise<string> {
   // Step 1: Initialize upload
-  const initRes = await fetch("https://api.linkedin.com/rest/images?action=initializeUpload", {
-    method: "POST",
-    headers: liHeaders(),
-    body: JSON.stringify({ initializeUploadRequest: { owner: LI_URN } }),
-  });
-  if (!initRes.ok) {
-    const err = await initRes.text();
-    throw new Error(`Image init failed: ${initRes.status} ${err}`);
-  }
-  const { value } = await initRes.json();
-  const uploadUrl: string = value.uploadUrl;
-  const imageUrn: string  = value.image;
+  const initRes = await axios.post(
+    "https://api.linkedin.com/rest/images?action=initializeUpload",
+    { initializeUploadRequest: { owner: LI_URN } },
+    { headers: liHeaders(), httpsAgent: ipv4Agent }
+  );
+
+  const uploadUrl: string = initRes.data.value.uploadUrl;
+  const imageUrn: string  = initRes.data.value.image;
 
   // Step 2: Upload bytes
   const imageBytes = Buffer.from(imageBase64, "base64");
-  const uploadRes = await fetch(uploadUrl, {
-    method: "PUT",
+  await axios.put(uploadUrl, imageBytes, {
     headers: {
       Authorization: `Bearer ${LI_TOKEN}`,
       "Content-Type": mimeType,
       "LinkedIn-Version": LI_VER,
     },
-    body: imageBytes,
+    httpsAgent: ipv4Agent,
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity,
   });
-  if (uploadRes.status !== 200 && uploadRes.status !== 201) {
-    throw new Error(`Image upload failed: ${uploadRes.status}`);
-  }
 
   return imageUrn;
 }
 
 // ── POST /api/linkedin/post ──────────────────────────────────────────────────
-// Body: { action: "generate" | "post", topic, postText?, imageBase64?, imageMime? }
 export async function POST(request: NextRequest) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -95,6 +96,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { action, topic, postText, imageBase64, imageMime } = body;
+    console.log("[LI] action:", action, "| postText len:", postText?.length, "| hasImage:", !!imageBase64);
 
     // ── Action: generate text only ──────────────────────────────────────────
     if (action === "generate") {
@@ -108,7 +110,8 @@ export async function POST(request: NextRequest) {
       if (!postText?.trim()) return NextResponse.json({ error: "Post text is required" }, { status: 400 });
       if (postText.length > 3000) return NextResponse.json({ error: "Post exceeds 3000 chars" }, { status: 400 });
 
-      // Build payload
+      console.log("[LI] token set:", !!LI_TOKEN, "| urn:", LI_URN);
+
       const payload: Record<string, unknown> = {
         author: LI_URN,
         commentary: postText,
@@ -124,40 +127,54 @@ export async function POST(request: NextRequest) {
 
       // Attach image if provided
       if (imageBase64 && imageMime) {
+        console.log("[LI] uploading image, mime:", imageMime, "base64 len:", imageBase64.length);
         try {
           const imageUrn = await uploadImage(imageBase64, imageMime);
+          console.log("[LI] image uploaded:", imageUrn);
           payload.content = { media: { id: imageUrn, title: "Post image" } };
         } catch (imgErr: any) {
-          console.warn("Image upload failed, posting without image:", imgErr.message);
-          // Continue posting without image rather than failing completely
+          console.warn("[LI] Image upload failed, posting without image:", imgErr.message, imgErr.response?.data);
         }
       }
 
-      // Post to LinkedIn
-      const res = await fetch("https://api.linkedin.com/rest/posts", {
-        method: "POST",
-        headers: liHeaders(),
-        body: JSON.stringify(payload),
-      });
+      console.log("[LI] posting to LinkedIn...");
+      const res = await axios.post(
+        "https://api.linkedin.com/rest/posts",
+        payload,
+        { headers: liHeaders(), httpsAgent: ipv4Agent, validateStatus: () => true }
+      );
+
+      console.log("[LI] response status:", res.status, "| headers:", JSON.stringify(res.headers));
+      if (res.status >= 400) console.error("[LI] error body:", JSON.stringify(res.data));
 
       if (res.status === 401) return NextResponse.json({ error: "LinkedIn token expired" }, { status: 401 });
       if (res.status === 429) return NextResponse.json({ error: "LinkedIn rate limit — try again in 60 min" }, { status: 429 });
-      if (!res.ok) {
-        const errBody = await res.text();
-        return NextResponse.json({ error: `LinkedIn error ${res.status}: ${errBody}` }, { status: 500 });
+      if (res.status >= 400) {
+        return NextResponse.json(
+          { error: `LinkedIn error ${res.status}: ${JSON.stringify(res.data)}` },
+          { status: 500 }
+        );
       }
 
-      const postId = res.headers.get("X-RestLi-Id") || res.headers.get("x-restli-id") || "";
+      const postId = res.headers["x-restli-id"] || "";
       const postUrl = postId
         ? `https://www.linkedin.com/feed/update/${postId}`
         : "https://www.linkedin.com/feed/";
 
+      console.log("[LI] success! postId:", postId);
       return NextResponse.json({ success: true, postId, postUrl, hasImage: !!payload.content });
     }
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   } catch (err: any) {
-    console.error("LinkedIn post error:", err);
-    return NextResponse.json({ error: err.message || "Internal error" }, { status: 500 });
+    const detail = {
+      message: err?.message ?? "(none)",
+      cause: err?.cause?.message ?? err?.cause?.code ?? "(none)",
+      axiosData: err?.response?.data ?? "(none)",
+      type: err?.constructor?.name ?? "(none)",
+      str: String(err),
+    };
+    console.error("[LI] CAUGHT ERROR:", JSON.stringify(detail));
+    return NextResponse.json({ error: JSON.stringify(detail) }, { status: 500 });
   }
 }

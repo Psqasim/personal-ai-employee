@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "NODE_OPTIONS=--dns-result-order=ipv4first next dev",
+    "build": "NODE_OPTIONS=--dns-result-order=ipv4first next build",
+    "start": "NODE_OPTIONS=--dns-result-order=ipv4first next start",
     "lint": "eslint",
     "format": "prettier --write .",
     "start:full": "cd .. && pm2 start ecosystem.config.local.js && pm2 save && cd nextjs_dashboard && npm run dev"
@@ -13,6 +13,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.77.0",
     "@types/bcryptjs": "^2.4.6",
+    "axios": "^1.13.5",
     "bcryptjs": "^3.0.3",
     "gray-matter": "^4.0.3",
     "next": "16.1.6",

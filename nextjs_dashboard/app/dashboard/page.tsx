@@ -170,10 +170,9 @@ export default function DashboardPage() {
             </div>
             <button
               onClick={() => signOut({ callbackUrl: "/login" })}
-              className="w-8 h-8 flex items-center justify-center rounded-lg bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40 border border-red-200 dark:border-red-800 text-sm transition-colors"
-              title="Sign Out"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40 border border-red-200 dark:border-red-800 text-xs font-semibold text-red-600 dark:text-red-400 transition-colors"
             >
-              🚪
+              🚪 Sign Out
             </button>
           </div>
         </div>

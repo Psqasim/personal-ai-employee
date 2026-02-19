@@ -8,7 +8,7 @@ interface CreateTaskModalProps {
   onSuccess: () => void;
 }
 
-type TaskType = "email" | "linkedin" | "whatsapp";
+type TaskType = "email" | "whatsapp";
 
 export function CreateTaskModal({ isOpen, onClose, onSuccess }: CreateTaskModalProps) {
   const [taskType, setTaskType] = useState<TaskType>("email");
@@ -91,7 +91,7 @@ export function CreateTaskModal({ isOpen, onClose, onSuccess }: CreateTaskModalP
             <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
               Task Type
             </label>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
                 onClick={() => setTaskType("email")}
@@ -106,18 +106,6 @@ export function CreateTaskModal({ isOpen, onClose, onSuccess }: CreateTaskModalP
               </button>
               <button
                 type="button"
-                onClick={() => setTaskType("linkedin")}
-                className={`px-4 py-3 rounded-lg border-2 font-medium transition-all ${
-                  taskType === "linkedin"
-                    ? "border-blue-600 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
-                    : "border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500"
-                }`}
-              >
-                <span className="text-2xl mb-1 block">💼</span>
-                <span className="text-sm">LinkedIn</span>
-              </button>
-              <button
-                type="button"
                 onClick={() => setTaskType("whatsapp")}
                 className={`px-4 py-3 rounded-lg border-2 font-medium transition-all ${
                   taskType === "whatsapp"
@@ -129,12 +117,15 @@ export function CreateTaskModal({ isOpen, onClose, onSuccess }: CreateTaskModalP
                 <span className="text-sm">WhatsApp</span>
               </button>
             </div>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
+              For LinkedIn posts with AI generation, use the <strong>🔗 LinkedIn</strong> button in the header.
+            </p>
           </div>
 
           {/* Recipient */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-              {taskType === "email" ? "To (Email)" : taskType === "whatsapp" ? "To (Phone)" : "Recipient"}
+              {taskType === "email" ? "To (Email)" : "To (Phone)"}
             </label>
             <input
               type={taskType === "email" ? "email" : "text"}
