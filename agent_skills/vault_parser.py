@@ -72,6 +72,22 @@ class LinkedInDraft:
 
 
 @dataclass
+class OdooDraft:
+    """Parsed OdooDraft entity from vault/Pending_Approval/Odoo/"""
+    draft_id: str
+    customer: str
+    amount: float
+    currency: str
+    description: str
+    action: str          # "create_draft_invoice" or "create_draft_expense"
+    status: str
+    created: datetime
+    odoo_data: Dict[str, Any]  # Full data passed to MCP
+    file_path: str = ""
+    mcp_server: str = "odoo-mcp"
+
+
+@dataclass
 class PlanStep:
     """Parsed PlanStep from Plan YAML"""
     step_num: int
@@ -242,8 +258,38 @@ def parse_draft_file(file_path: str, draft_type: str = "email") -> Any:
             file_path=file_path
         )
 
+    elif draft_type == "odoo":
+        action = frontmatter.get("action", "create_draft_invoice")
+        amount_raw = frontmatter.get("amount", 0)
+        try:
+            amount = float(str(amount_raw).replace(",", "").replace("$", "").strip())
+        except (ValueError, TypeError):
+            amount = 0.0
+        odoo_data = {
+            "customer": frontmatter.get("customer", ""),
+            "vendor": frontmatter.get("vendor", frontmatter.get("customer", "")),
+            "amount": amount,
+            "currency": frontmatter.get("currency", "USD"),
+            "description": frontmatter.get("description", body.strip()),
+            "invoice_date": frontmatter.get("invoice_date", None),
+            "expense_date": frontmatter.get("expense_date", None),
+        }
+        return OdooDraft(
+            draft_id=frontmatter.get("draft_id", Path(file_path).stem),
+            customer=frontmatter.get("customer", frontmatter.get("vendor", "")),
+            amount=amount,
+            currency=frontmatter.get("currency", "USD"),
+            description=frontmatter.get("description", body.strip()[:200]),
+            action=action,
+            status=frontmatter.get("status", "pending"),
+            created=parse_datetime(frontmatter.get("created", datetime.now().isoformat())) or datetime.now(),
+            odoo_data=odoo_data,
+            file_path=file_path,
+            mcp_server=frontmatter.get("mcp_server", "odoo-mcp"),
+        )
+
     else:
-        raise ValueError(f"Invalid draft_type: {draft_type}. Must be 'email', 'whatsapp', or 'linkedin'")
+        raise ValueError(f"Invalid draft_type: {draft_type}. Must be 'email', 'whatsapp', 'linkedin', or 'odoo'")
 
 
 def parse_plan_file(file_path: str) -> Plan:
@@ -351,6 +397,8 @@ def detect_draft_type(file_path: str) -> Optional[str]:
         return "whatsapp"
     elif "/linkedin/" in path_str or "linkedin_post" in path_str:
         return "linkedin"
+    elif "/odoo/" in path_str or "invoice_draft" in path_str or "odoo_draft" in path_str:
+        return "odoo"
 
     return None
 

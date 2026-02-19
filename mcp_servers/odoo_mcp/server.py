@@ -32,12 +32,14 @@ class OdooMCPServer:
         self.url = os.getenv("ODOO_URL")
         self.db = os.getenv("ODOO_DB")
         self.username = os.getenv("ODOO_USER")
-        self.password = os.getenv("ODOO_PASSWORD")
+        # API key takes priority over password (Odoo 14+: API key used as password)
+        self.password = os.getenv("ODOO_API_KEY") or os.getenv("ODOO_PASSWORD")
 
         # Validate required env vars
         if not all([self.url, self.db, self.username, self.password]):
             raise ValueError(
-                "Missing Odoo credentials. Required: ODOO_URL, ODOO_DB, ODOO_USER, ODOO_PASSWORD"
+                "Missing Odoo credentials. Required: ODOO_URL, ODOO_DB, ODOO_USER, "
+                "and either ODOO_API_KEY or ODOO_PASSWORD"
             )
 
         # XML-RPC endpoints
@@ -239,6 +241,66 @@ class OdooMCPServer:
         except Exception as e:
             raise Exception(f"Failed to create draft expense: {str(e)}")
 
+    def list_invoices(self, limit: int = 10) -> list:
+        """
+        List recent draft invoices from Odoo.
+
+        Returns:
+            List of invoice dicts with id, name, partner, amount, state
+        """
+        try:
+            invoice_ids = self._execute_kw(
+                "account.move", "search",
+                [[["move_type", "=", "out_invoice"]]],
+                {"order": "create_date desc", "limit": limit}
+            )
+            if not invoice_ids:
+                return []
+            invoices = self._execute_kw(
+                "account.move", "read",
+                [invoice_ids],
+                {"fields": ["name", "partner_id", "amount_total", "state", "invoice_date", "create_date"]}
+            )
+            return [
+                {
+                    "id": inv["id"],
+                    "number": inv["name"],
+                    "customer": inv["partner_id"][1] if inv["partner_id"] else "Unknown",
+                    "amount": inv["amount_total"],
+                    "state": inv["state"],
+                    "date": inv.get("invoice_date") or inv.get("create_date", ""),
+                }
+                for inv in invoices
+            ]
+        except Exception as e:
+            raise Exception(f"Failed to list invoices: {str(e)}")
+
+    def create_contact(self, name: str, email: str = "", phone: str = "") -> Dict[str, Any]:
+        """
+        Create or update a contact in Odoo res.partner.
+
+        Returns:
+            {"partner_id": int, "name": str, "created": bool}
+        """
+        try:
+            existing = self._execute_kw(
+                "res.partner", "search",
+                [[["name", "ilike", name]]],
+                {"limit": 1}
+            )
+            if existing:
+                return {"partner_id": existing[0], "name": name, "created": False}
+
+            vals = {"name": name}
+            if email:
+                vals["email"] = email
+            if phone:
+                vals["phone"] = phone
+            partner_id = self._execute_kw("res.partner", "create", [[vals]])
+            return {"partner_id": partner_id, "name": name, "created": True}
+        except Exception as e:
+            raise Exception(f"Failed to create contact: {str(e)}")
+
     def _find_or_create_partner(self, partner_name: str) -> int:
         """
         Find partner by name or create if not exists.
@@ -316,6 +378,29 @@ def handle_jsonrpc_request(request: Dict) -> Dict:
                             }
                         },
                         {
+                            "name": "list_invoices",
+                            "description": "List recent invoices from Odoo",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "limit": {"type": "integer", "description": "Max results (default 10)", "optional": True}
+                                }
+                            }
+                        },
+                        {
+                            "name": "create_contact",
+                            "description": "Create or find a contact in Odoo",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string", "description": "Contact name"},
+                                    "email": {"type": "string", "description": "Email address", "optional": True},
+                                    "phone": {"type": "string", "description": "Phone number", "optional": True}
+                                },
+                                "required": ["name"]
+                            }
+                        },
+                        {
                             "name": "create_draft_expense",
                             "description": "Create draft expense entry in Odoo (status=draft, never auto-posted)",
                             "inputSchema": {
@@ -350,6 +435,18 @@ def handle_jsonrpc_request(request: Dict) -> Dict:
                     "id": request_id,
                     "result": result
                 }
+
+            elif tool_name == "list_invoices":
+                result = server.list_invoices(limit=arguments.get("limit", 10))
+                return {"jsonrpc": "2.0", "id": request_id, "result": result}
+
+            elif tool_name == "create_contact":
+                result = server.create_contact(
+                    name=arguments.get("name"),
+                    email=arguments.get("email", ""),
+                    phone=arguments.get("phone", "")
+                )
+                return {"jsonrpc": "2.0", "id": request_id, "result": result}
 
             elif tool_name == "create_draft_expense":
                 result = server.create_draft_expense(

@@ -65,10 +65,14 @@ export function getPendingApprovals(): ApprovalItem[] {
           const content = fs.readFileSync(filePath, "utf-8");
           const { data, content: bodyContent } = safeMatter(content);
 
+          const isOdoo = data.type === "odoo_invoice" || data.type === "odoo";
           items.push({
             id: path.basename(file, ".md"),
             category: category as any,
-            title: data.title || data.subject || file.replace(".md", ""),
+            title: data.title || data.subject ||
+              (isOdoo && data.customer
+                ? `🧾 Invoice: ${data.customer} · ${data.currency ?? "USD"} ${data.amount ?? ""}`
+                : file.replace(".md", "")),
             preview: bodyContent.substring(0, 200) + (bodyContent.length > 200 ? "..." : ""),
             timestamp: data.timestamp || data.created_at || stat.mtime.toISOString(),
             filePath: path.relative(VAULT_PATH, filePath),
@@ -342,10 +346,14 @@ function readItemsFromDirectory(dirPath: string, relativePath: string): Approval
           const pathParts = relativePath.split(path.sep);
           const category = pathParts[pathParts.length - 1] || "General";
 
+          const isOdooEntry = data.type === "odoo_invoice" || data.type === "odoo";
           items.push({
             id: path.basename(entry, ".md"),
             category: category as any,
-            title: data.title || data.subject || entry.replace(".md", ""),
+            title: data.title || data.subject ||
+              (isOdooEntry && data.customer
+                ? `🧾 Invoice: ${data.customer} · ${data.currency ?? "USD"} ${data.amount ?? ""}`
+                : entry.replace(".md", "")),
             preview: bodyContent.substring(0, 200) + (bodyContent.length > 200 ? "..." : ""),
             timestamp: data.timestamp || data.created_at || stat.mtime.toISOString(),
             filePath: path.relative(VAULT_PATH, fullPath),

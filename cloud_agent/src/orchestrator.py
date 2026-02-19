@@ -87,6 +87,15 @@ class CloudOrchestrator:
         from agent_skills.draft_generator import generate_email_draft
         from agent_skills.dashboard_updater import update_dashboard
 
+        # Odoo draft generator (only instantiate if enabled)
+        odoo_gen = None
+        if os.getenv("ENABLE_ODOO", "false").lower() == "true":
+            try:
+                from cloud_agent.src.generators.odoo_draft import OdooDraftGenerator
+                odoo_gen = OdooDraftGenerator(self.vault_path)
+            except Exception as e:
+                logger.debug(f"Odoo draft generator unavailable: {e}")
+
         for email_file in email_files:
             try:
                 # Parse email
@@ -104,6 +113,15 @@ class CloudOrchestrator:
                     except Exception as qe:
                         logger.warning(f"Could not quarantine {email_file.name}: {qe}")
                     continue
+
+                # Generate Odoo invoice draft if invoice keywords detected
+                if odoo_gen:
+                    try:
+                        odoo_path = odoo_gen.generate_and_save(email_data)
+                        if odoo_path:
+                            logger.info(f"🧾 Odoo draft queued: {odoo_path.name}")
+                    except Exception as e:
+                        logger.debug(f"Odoo draft skipped for {email_file.name}: {e}")
 
                 # Check if already drafted
                 draft_id = email_data.get("email_id", email_file.stem)

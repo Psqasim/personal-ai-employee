@@ -19,31 +19,98 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { type, to, subject, content } = body;
+    const { type, to, subject, content, customer, amount, currency, description } = body;
 
     // Validate inputs
-    if (!type || !to || !content) {
+    if (!type) {
       return NextResponse.json(
-        { error: "Missing required fields: type, to, content" },
+        { error: "Missing required field: type" },
         { status: 400 }
       );
     }
 
-    if (!["email", "linkedin", "whatsapp"].includes(type)) {
+    if (!["email", "linkedin", "whatsapp", "odoo"].includes(type)) {
       return NextResponse.json(
-        { error: "Invalid type. Must be email, linkedin, or whatsapp" },
+        { error: "Invalid type. Must be email, linkedin, whatsapp, or odoo" },
         { status: 400 }
       );
     }
 
-    if (type === "email" && !subject) {
-      return NextResponse.json(
-        { error: "Subject required for email tasks" },
-        { status: 400 }
-      );
+    if (type === "odoo") {
+      if (!customer || amount === undefined || !description) {
+        return NextResponse.json(
+          { error: "Odoo tasks require: customer, amount, description" },
+          { status: 400 }
+        );
+      }
+    } else {
+      if (!to || !content) {
+        return NextResponse.json(
+          { error: "Missing required fields: to, content" },
+          { status: 400 }
+        );
+      }
+      if (type === "email" && !subject) {
+        return NextResponse.json(
+          { error: "Subject required for email tasks" },
+          { status: 400 }
+        );
+      }
     }
 
-    // Determine folder based on type
+    const timestamp = Date.now();
+    const userName = (session.user.name || "User").replace(/\s+/g, "_");
+    const vaultPath = path.join(process.cwd(), "..", "vault");
+
+    // ── Odoo draft ──────────────────────────────────────────────────────────────
+    if (type === "odoo") {
+      const odooDir = path.join(vaultPath, "Pending_Approval", "Odoo");
+      if (!fs.existsSync(odooDir)) fs.mkdirSync(odooDir, { recursive: true });
+
+      const draftId = `MANUAL_${userName}_${timestamp}`;
+      const fileName = `INVOICE_DRAFT_${draftId}.md`;
+      const filePath = path.join(odooDir, fileName);
+
+      const amountNum = parseFloat(amount) || 0;
+      const curr = (currency || "USD").toUpperCase();
+      const now = new Date().toISOString();
+
+      const fileContent = `---
+type: odoo_invoice
+draft_id: ${draftId}
+action: create_draft_invoice
+status: pending
+customer: ${customer}
+amount: ${amountNum.toFixed(2)}
+currency: ${curr}
+description: ${description}
+source_email_id: manual
+source_email_from: ${session.user.email || "dashboard"}
+created: ${now}
+mcp_server: odoo-mcp
+---
+
+## Odoo Invoice Draft
+
+**Customer:** ${customer}
+**Amount:** ${curr} ${amountNum.toFixed(2)}
+**Description:** ${description}
+
+---
+
+*Created manually via dashboard by ${session.user.name} on ${now}*
+`;
+
+      fs.writeFileSync(filePath, fileContent, "utf-8");
+
+      return NextResponse.json({
+        success: true,
+        message: "Odoo invoice draft created successfully",
+        filePath: path.relative(vaultPath, filePath),
+      });
+    }
+
+    // ── Email / WhatsApp / LinkedIn ──────────────────────────────────────────────
     const folderMap: Record<string, string> = {
       email: "Email",
       linkedin: "LinkedIn",
@@ -51,12 +118,9 @@ export async function POST(req: NextRequest) {
     };
 
     const folder = folderMap[type];
-    const timestamp = Date.now();
-    const userName = (session.user.name || "User").replace(/\s+/g, "_");
     const fileName = `MANUAL_${type.toUpperCase()}_${userName}_${timestamp}.md`;
 
     // Create file path
-    const vaultPath = path.join(process.cwd(), "..", "vault");
     const categoryPath = path.join(vaultPath, "Pending_Approval", folder);
     const filePath = path.join(categoryPath, fileName);
 
