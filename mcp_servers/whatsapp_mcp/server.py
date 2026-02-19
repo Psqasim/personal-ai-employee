@@ -28,29 +28,34 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 _IS_WSL2 = os.path.exists("/proc/version") and \
     "microsoft" in open("/proc/version").read().lower()
 
-# WSL2: PM2 subprocesses don't inherit DISPLAY from the user shell.
-# Force DISPLAY=:0 so headed Chrome can reach WSLg display server.
-if _IS_WSL2 and not os.getenv("DISPLAY"):
-    os.environ["DISPLAY"] = ":0"
-
-# Headless: explicit override > no DISPLAY.
-# WSL2 EXCEPTION: never run headless on WSL2 (--no-zygote + --disable-gpu crashes).
+# Standard headless detection (used for non-WSL2 / real Linux cloud)
 HEADLESS = (
     os.getenv("PLAYWRIGHT_HEADLESS", "").lower() in ("1", "true", "yes")
-    or (not os.getenv("DISPLAY") and not _IS_WSL2)
+    or not os.getenv("DISPLAY")
 )
-_HEADLESS_ARGS = ["--disable-gpu", "--enable-unsafe-swiftshader", "--disable-setuid-sandbox"]
+
+# Verified working Chrome arg combinations on WSL2 (tested 2026-02-18):
+#   headless=True + --no-zygote + --disable-gpu              → WORKS ✓
+#   headless=True + --no-zygote + --enable-unsafe-swiftshader → SIGTRAP ✗
+#   headless=False + --no-zygote                             → SIGTRAP ✗
+# WSL2 always runs headless with a specific safe arg set, regardless of DISPLAY.
+_WSL2_ARGS = [
+    "--no-sandbox", "--disable-dev-shm-usage", "--disable-crash-reporter",
+    "--disable-background-networking", "--no-zygote",
+    "--disable-gpu", "--disable-setuid-sandbox",  # NO --enable-unsafe-swiftshader
+]
+_CLOUD_HEADLESS_ARGS = [
+    "--no-sandbox", "--disable-dev-shm-usage", "--disable-crash-reporter",
+    "--disable-background-networking",
+    "--disable-gpu", "--enable-unsafe-swiftshader", "--disable-setuid-sandbox",
+    "--no-first-run", "--mute-audio",
+]
 _UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36")
 
 
 def _cleanup_stale_chrome_locks(session_path: str) -> None:
-    """Remove stale Chrome singleton files left by crashed sessions.
-
-    Without this, every Chrome crash leaves behind SingletonLock/SingletonSocket
-    files. The next Chrome launch finds them, tries to contact the dead process,
-    fails, and crashes with SIGTRAP — a self-perpetuating crash loop.
-    """
+    """Remove stale Chrome singleton files left by crashed sessions."""
     import glob
     import shutil
     for name in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
@@ -65,26 +70,28 @@ def _cleanup_stale_chrome_locks(session_path: str) -> None:
 
 
 def _launch_ctx(p, session_path):
-    """Launch persistent context with auto headless detection.
-    --no-zygote: WSL2 needs it (prevents SIGTRAP) regardless of headless mode.
-    Real Linux (Oracle Cloud) must NOT have it — causes Chrome startup slowdown
-    that makes WhatsApp Web time out.
+    """Launch persistent context. WSL2 and cloud use different arg sets.
+
+    WSL2: headless=True + --no-zygote + --disable-gpu (no SwiftShader).
+      --enable-unsafe-swiftshader conflicts with --no-zygote → SIGTRAP crash.
+    Cloud (real Linux): headless=True + --enable-unsafe-swiftshader, no --no-zygote.
     """
-    _cleanup_stale_chrome_locks(session_path)  # prevent crash-loop from stale locks
-    args = [
-        "--no-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-crash-reporter",
-        "--disable-background-networking",
-    ]
+    _cleanup_stale_chrome_locks(session_path)
     if _IS_WSL2:
-        args.append("--no-zygote")  # WSL2 only — fixes SIGTRAP crash
-    if HEADLESS:
-        args += _HEADLESS_ARGS + ["--no-first-run", "--mute-audio"]
+        return p.chromium.launch_persistent_context(
+            user_data_dir=session_path,
+            headless=True,
+            args=_WSL2_ARGS,
+            user_agent=_UA,
+            viewport={"width": 1280, "height": 800},
+        )
     return p.chromium.launch_persistent_context(
         user_data_dir=session_path,
         headless=HEADLESS,
-        args=args,
+        args=_CLOUD_HEADLESS_ARGS if HEADLESS else [
+            "--no-sandbox", "--disable-dev-shm-usage",
+            "--disable-crash-reporter", "--disable-background-networking",
+        ],
         user_agent=_UA,
         viewport={"width": 1280, "height": 800},
     )
@@ -186,45 +193,47 @@ def send_message(chat_id: str, message: str) -> Dict[str, Any]:
     if not session_path or not os.path.isdir(session_path):
         raise Exception("SESSION_EXPIRED: WhatsApp session directory not found — run setup_whatsapp_session.py")
 
+    # WSL2: Playwright Node.js driver hangs when CWD is on Windows NTFS mount (/mnt/d).
+    # chdir to Linux tmpfs first — safe on WSL2 only (_IS_WSL2 is False on cloud).
+    if _IS_WSL2:
+        import os as _os
+        _os.chdir("/tmp")
+
     try:
         with _browser_lock(timeout=90):
             with sync_playwright() as p:
                 # Use launch_persistent_context — preserves IndexedDB + ServiceWorkers
-                # Auto-detects headless (WSL2 no-display) via _launch_ctx()
                 context = _launch_ctx(p, session_path)
                 page = context.new_page()
 
-                # domcontentloaded fires fast; WhatsApp JS needs extra time to render UI
+                # Step 1: load main page so WhatsApp JS initializes fully
                 page.goto('https://web.whatsapp.com', wait_until='domcontentloaded', timeout=30000)
-                page.wait_for_timeout(3000)  # Let WhatsApp JS initialize
-
-                # Wait for logged-in state OR QR code
-                try:
-                    page.wait_for_selector(
-                        f'{SELECTORS["LOGGED_IN"]}, {SELECTORS["QR_CODE"]}',
-                        timeout=90000
-                    )
-                except PlaywrightTimeout:
-                    raise Exception("LOAD_TIMEOUT: WhatsApp Web did not load within 90s")
-
-                if page.locator(SELECTORS["QR_CODE"]).count() > 0:
-                    raise Exception("SESSION_EXPIRED: QR code detected — re-run setup_whatsapp_session.py")
-
-                # Search for contact
-                search_box = page.wait_for_selector(SELECTORS["SEARCH_BOX"], timeout=15000)
-                search_box.fill(chat_id)
-                page.keyboard.press('Enter')
-                page.wait_for_timeout(2000)  # Wait for chat to open
-
-                # Type and send message
-                message_input = page.wait_for_selector(SELECTORS["MESSAGE_INPUT"], timeout=15000)
-                message_input.fill(message)
-                page.click(SELECTORS["SEND_BUTTON"])
-
-                # Wait for send confirmation
+                page.wait_for_selector(SELECTORS["LOGGED_IN"], timeout=60000)
                 page.wait_for_timeout(2000)
 
-                context.close()  # persistent context — no separate browser object
+                # Step 2: navigate directly to chat via send URL (works for numbers + contacts)
+                phone = chat_id.lstrip("+").replace(" ", "")
+                page.goto(
+                    f"https://web.whatsapp.com/send?phone={phone}",
+                    wait_until="domcontentloaded", timeout=30000,
+                )
+                page.wait_for_selector(SELECTORS["MESSAGE_INPUT"], timeout=30000)
+                page.wait_for_timeout(1000)
+
+                # Type and send message
+                msg_box = page.locator(SELECTORS["MESSAGE_INPUT"])
+                msg_box.click()
+                msg_box.fill(message)
+                page.wait_for_timeout(500)
+
+                send_btn = page.locator(SELECTORS["SEND_BUTTON"])
+                if send_btn.count() > 0:
+                    send_btn.click()
+                else:
+                    page.keyboard.press("Enter")
+
+                page.wait_for_timeout(2000)
+                context.close()
 
                 message_id = f"msg_{int(datetime.now().timestamp())}"
                 sent_at = datetime.now().isoformat()

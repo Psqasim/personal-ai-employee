@@ -16,14 +16,19 @@ BROWSER_LOCK_FILE = "/tmp/whatsapp_browser.lock"
 SESSION_PATH = os.getenv("WHATSAPP_SESSION_PATH", os.path.expanduser("~/.whatsapp_session_dir"))
 _IS_WSL2 = os.path.exists("/proc/version") and \
     "microsoft" in open("/proc/version").read().lower()
-# WSL2: PM2 subprocesses don't inherit DISPLAY — force it so headed Chrome works.
-if _IS_WSL2 and not os.getenv("DISPLAY"):
-    os.environ["DISPLAY"] = ":0"
-# Headless: explicit override > no DISPLAY. Never headless on WSL2 (--no-zygote conflicts).
 HEADLESS = (
     os.getenv("PLAYWRIGHT_HEADLESS", "").lower() in ("1", "true", "yes")
-    or (not os.getenv("DISPLAY") and not _IS_WSL2)
+    or not os.getenv("DISPLAY")
 )
+# Verified working Chrome arg combinations on WSL2 (tested 2026-02-18):
+#   headless=True + --no-zygote + --disable-gpu              → WORKS ✓
+#   headless=True + --no-zygote + --enable-unsafe-swiftshader → SIGTRAP ✗
+#   headless=False + --no-zygote                             → SIGTRAP ✗
+_WSL2_ARGS = [
+    "--no-sandbox", "--disable-dev-shm-usage", "--disable-crash-reporter",
+    "--disable-extensions", "--disable-background-networking",
+    "--no-zygote", "--disable-gpu", "--disable-setuid-sandbox",
+]
 UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36")
 
@@ -76,47 +81,49 @@ def send_message(chat_id: str, message: str) -> dict:
     if not os.path.isdir(SESSION_PATH):
         return {"success": False, "error": "SESSION_EXPIRED: session dir not found"}
 
-    _cleanup_stale_chrome_locks(SESSION_PATH)  # prevent SIGTRAP crash-loop
+    _cleanup_stale_chrome_locks(SESSION_PATH)
 
-    args = [
-        "--no-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-crash-reporter",
-        "--disable-extensions",
-        "--disable-background-networking",
-    ]
     if _IS_WSL2:
-        args.append("--no-zygote")  # WSL2 only — fixes SIGTRAP crash
-    if HEADLESS:
-        args += ["--disable-gpu", "--enable-unsafe-swiftshader",
-                 "--disable-setuid-sandbox", "--no-first-run", "--mute-audio"]
+        use_headless = True
+        args = _WSL2_ARGS
+    else:
+        use_headless = HEADLESS
+        args = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-crash-reporter",
+                "--disable-extensions", "--disable-background-networking"]
+        if HEADLESS:
+            args += ["--disable-gpu", "--enable-unsafe-swiftshader",
+                     "--disable-setuid-sandbox", "--no-first-run", "--mute-audio"]
+
+    # WSL2: Playwright Node.js driver hangs when CWD is on Windows NTFS mount (/mnt/d).
+    # Running from /tmp (Linux tmpfs) avoids this — adds ~20s startup but is reliable.
+    if _IS_WSL2:
+        os.chdir("/tmp")
 
     try:
         with _browser_lock(timeout=90):
             with sync_playwright() as p:
                 ctx = p.chromium.launch_persistent_context(
                     user_data_dir=SESSION_PATH,
-                    headless=HEADLESS,
+                    headless=use_headless,
                     args=args,
                     user_agent=UA,
                     viewport={"width": 1280, "height": 800},
                 )
                 page = ctx.new_page()
+                # Step 1: load main WhatsApp page so JS is fully initialized
                 page.goto("https://web.whatsapp.com", wait_until="domcontentloaded", timeout=30000)
                 page.wait_for_selector(SELECTORS["LOGGED_IN"], timeout=60000)
-
-                # Search for chat
-                search = page.locator(SELECTORS["SEARCH_BOX"])
-                search.click()
-                search.fill(chat_id)
                 page.wait_for_timeout(2000)
 
-                # Click first result
-                results = page.locator(f'span[title="{chat_id}"], [title="{chat_id}"]')
-                if results.count() == 0:
-                    results = page.locator('div[role="listitem"]').first
-                results.first.click()
-                page.wait_for_timeout(1500)
+                # Step 2: navigate to the specific chat via send URL
+                # Works for saved contacts AND unsaved phone numbers
+                phone = chat_id.lstrip("+").replace(" ", "")
+                page.goto(
+                    f"https://web.whatsapp.com/send?phone={phone}",
+                    wait_until="domcontentloaded", timeout=30000,
+                )
+                page.wait_for_selector(SELECTORS["MESSAGE_INPUT"], timeout=30000)
+                page.wait_for_timeout(1000)
 
                 # Type and send message
                 msg_box = page.locator(SELECTORS["MESSAGE_INPUT"])
