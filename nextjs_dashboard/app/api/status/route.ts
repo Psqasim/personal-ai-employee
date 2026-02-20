@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { getPendingApprovals, getVaultStatus } from "@/lib/vault";
+import { getPendingApprovals, getVaultStatus, getRecentDoneItems } from "@/lib/vault";
 
 export const dynamic = "force-dynamic";
 
@@ -15,10 +15,12 @@ export async function GET() {
   try {
     const pendingApprovals = getPendingApprovals();
     const vaultStatus = getVaultStatus();
+    const recentDone = getRecentDoneItems(10);
 
     return NextResponse.json({
       approvals: pendingApprovals,
       counts: vaultStatus,
+      recentDone,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {

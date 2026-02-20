@@ -12,6 +12,7 @@ export default function DashboardPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [approvals, setApprovals] = useState<ApprovalItem[]>([]);
+  const [recentDone, setRecentDone] = useState<ApprovalItem[]>([]);
   const [counts, setCounts] = useState({ pending: 0, inProgress: 0, approved: 0 });
   const [vaultSections, setVaultSections] = useState<VaultSection[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,7 +35,8 @@ export default function DashboardPage() {
     try {
       const res = await fetch("/api/status");
       const data = await res.json();
-      setApprovals(data.approvals);
+      setApprovals(data.approvals || []);
+      setRecentDone(data.recentDone || []);
       setCounts(data.counts);
 
       const userRole = (session?.user as any)?.role;
@@ -141,6 +143,50 @@ export default function DashboardPage() {
           </div>
         )}
       </section>
+
+      {/* ── Recently Completed ────────────────────────────────────────── */}
+      {recentDone.length > 0 && (
+        <section>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white">Recently Completed</h2>
+            <span className="text-xs text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded-full">
+              {recentDone.length} item{recentDone.length !== 1 ? "s" : ""}
+            </span>
+          </div>
+          <div className="space-y-2">
+            {recentDone.map((item) => {
+              const catIcon: Record<string, string> = {
+                Email: "📧", WhatsApp: "💬", LinkedIn: "🔗", Odoo: "🧾",
+                Facebook: "📘", Instagram: "📸", Twitter: "🐦",
+              };
+              const icon = catIcon[item.category] ?? "📄";
+              const isOdoo = item.metadata?.type === "odoo_invoice" || item.metadata?.type === "odoo";
+              return (
+                <div
+                  key={item.id}
+                  className="flex items-center gap-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3"
+                >
+                  <span className="text-xl shrink-0">{icon}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{item.title}</p>
+                    {isOdoo && item.metadata?.amount && (
+                      <p className="text-xs text-green-600 dark:text-green-400 font-medium">
+                        {item.metadata.currency ?? "USD"} {item.metadata.amount} · {item.metadata.customer}
+                      </p>
+                    )}
+                    <p className="text-xs text-gray-400 dark:text-gray-500">
+                      {new Date(item.timestamp).toLocaleString()}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-0.5 rounded-full font-medium">
+                    Done
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {/* ── API Usage Chart (collapsible) ─────────────────────────────── */}
       <section>

@@ -232,6 +232,21 @@ export function getRecentActivity(limit: number = 10) {
   }
 }
 
+/**
+ * Get recent Done items across all categories (Email, WhatsApp, Odoo, LinkedIn)
+ */
+export function getRecentDoneItems(limit: number = 10): ApprovalItem[] {
+  const donePath = path.join(VAULT_PATH, "Done");
+  if (!fs.existsSync(donePath)) return [];
+
+  try {
+    const items = readItemsFromDirectory(donePath, "Done");
+    return items.slice(0, limit);
+  } catch {
+    return [];
+  }
+}
+
 export interface VaultSection {
   name: string;
   path: string;

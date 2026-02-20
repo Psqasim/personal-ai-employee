@@ -83,6 +83,7 @@ class OdooDraft:
     status: str
     created: datetime
     odoo_data: Dict[str, Any]  # Full data passed to MCP
+    customer_email: str = ""   # optional — if set, Odoo sends invoice PDF to this email
     file_path: str = ""
     mcp_server: str = "odoo-mcp"
 
@@ -267,6 +268,7 @@ def parse_draft_file(file_path: str, draft_type: str = "email") -> Any:
             amount = 0.0
         odoo_data = {
             "customer": frontmatter.get("customer", ""),
+            "customer_email": frontmatter.get("customer_email", ""),
             "vendor": frontmatter.get("vendor", frontmatter.get("customer", "")),
             "amount": amount,
             "currency": frontmatter.get("currency", "USD"),
@@ -277,6 +279,7 @@ def parse_draft_file(file_path: str, draft_type: str = "email") -> Any:
         return OdooDraft(
             draft_id=frontmatter.get("draft_id", Path(file_path).stem),
             customer=frontmatter.get("customer", frontmatter.get("vendor", "")),
+            customer_email=frontmatter.get("customer_email", ""),
             amount=amount,
             currency=frontmatter.get("currency", "USD"),
             description=frontmatter.get("description", body.strip()[:200]),

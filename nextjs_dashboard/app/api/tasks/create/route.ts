@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { type, to, subject, content, customer, amount, currency, description } = body;
+    const { type, to, subject, content, customer, customer_email, amount, currency, description } = body;
 
     // Validate inputs
     if (!type) {
@@ -75,13 +75,14 @@ export async function POST(req: NextRequest) {
       const curr = (currency || "USD").toUpperCase();
       const now = new Date().toISOString();
 
+      const emailLine = customer_email ? `customer_email: ${customer_email}\n` : "";
       const fileContent = `---
 type: odoo_invoice
 draft_id: ${draftId}
 action: create_draft_invoice
 status: pending
 customer: ${customer}
-amount: ${amountNum.toFixed(2)}
+${emailLine}amount: ${amountNum.toFixed(2)}
 currency: ${curr}
 description: ${description}
 source_email_id: manual

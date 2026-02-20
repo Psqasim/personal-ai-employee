@@ -164,10 +164,39 @@ class OdooPoster:
             {"fields": ["name", "state", "create_date"]}
         )[0]
 
+        invoice_number = invoice.get("name") or f"INV/{record_id}"
+
+        # ── Optional: update partner email + send invoice PDF via Odoo ──
+        if draft.customer_email:
+            try:
+                # Update partner email so Odoo sends to the right address
+                execute("res.partner", "write", [[int(partner_id)], {"email": draft.customer_email}])
+
+                # Find the "Customer Invoice" mail template
+                tmpl_ids = execute(
+                    "mail.template", "search",
+                    [[["model", "=", "account.move"],
+                      ["name", "ilike", "Invoice"]]],
+                    {"limit": 1}
+                )
+                if tmpl_ids:
+                    execute(
+                        "mail.template", "send_mail",
+                        [tmpl_ids[0], int(record_id)],
+                        {"force_send": True}
+                    )
+                    logger.info(f"📧 Invoice email sent to {draft.customer_email} via Odoo template")
+                else:
+                    logger.warning("No 'Invoice' mail template found in Odoo — email NOT sent")
+            except Exception as email_err:
+                # Non-fatal: invoice was created, just email failed
+                logger.warning(f"Odoo email send failed (invoice still created): {email_err}")
+
         return {
             "odoo_record_id": record_id,
-            "invoice_number": invoice.get("name") or f"INV/{record_id}",
+            "invoice_number": invoice_number,
             "status": invoice.get("state") or "draft",
+            "email_sent": bool(draft.customer_email),
         }
 
     def _send_whatsapp_confirmation(self, draft: OdooDraft, result: Dict[str, Any]):
@@ -175,9 +204,10 @@ class OdooPoster:
         try:
             from cloud_agent.src.notifications.whatsapp_notifier import notify_task_completed
             invoice_num = result.get("invoice_number", "N/A")
+            email_note = f" · email sent to {draft.customer_email}" if result.get("email_sent") else ""
             notify_task_completed(
                 task_type="odoo_invoice",
-                details=f"Invoice {invoice_num} created in Odoo | {draft.customer} | {draft.currency} {draft.amount:.2f}"
+                details=f"Invoice {invoice_num} created in Odoo | {draft.customer} | {draft.currency} {draft.amount:.2f}{email_note}"
             )
         except Exception as e:
             logger.debug(f"WhatsApp notification skipped: {e}")

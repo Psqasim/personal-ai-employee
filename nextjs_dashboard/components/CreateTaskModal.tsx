@@ -17,6 +17,7 @@ export function CreateTaskModal({ isOpen, onClose, onSuccess }: CreateTaskModalP
   const [content, setContent] = useState("");
   // Odoo fields
   const [customer, setCustomer] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState("USD");
   const [description, setDescription] = useState("");
@@ -28,7 +29,7 @@ export function CreateTaskModal({ isOpen, onClose, onSuccess }: CreateTaskModalP
 
   const resetForm = () => {
     setRecipient(""); setSubject(""); setContent("");
-    setCustomer(""); setAmount(""); setCurrency("USD"); setDescription("");
+    setCustomer(""); setCustomerEmail(""); setAmount(""); setCurrency("USD"); setDescription("");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -41,6 +42,7 @@ export function CreateTaskModal({ isOpen, onClose, onSuccess }: CreateTaskModalP
 
       if (taskType === "odoo") {
         payload.customer = customer;
+        payload.customer_email = customerEmail;   // optional — triggers Odoo email send
         payload.amount = parseFloat(amount) || 0;
         payload.currency = currency;
         payload.description = description;
@@ -143,6 +145,18 @@ export function CreateTaskModal({ isOpen, onClose, onSuccess }: CreateTaskModalP
                   onChange={(e) => setCustomer(e.target.value)}
                   required
                   placeholder="Acme Corp"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                  Customer Email <span className="text-gray-400 font-normal">(optional — Odoo sends invoice PDF)</span>
+                </label>
+                <input
+                  type="email"
+                  value={customerEmail}
+                  onChange={(e) => setCustomerEmail(e.target.value)}
+                  placeholder="tayyab@example.com"
                   className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                 />
               </div>
