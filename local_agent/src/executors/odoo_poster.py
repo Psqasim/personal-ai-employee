@@ -132,7 +132,9 @@ class OdooPoster:
         if partner_ids:
             partner_id = partner_ids[0]
         else:
-            partner_id = execute("res.partner", "create", [[{"name": draft.customer}]])
+            # Pass single dict (not a list) → Odoo returns one integer ID
+            raw = execute("res.partner", "create", [{"name": draft.customer}])
+            partner_id = raw[0] if isinstance(raw, list) else raw
             logger.info(f"Created Odoo partner: {draft.customer} (ID {partner_id})")
 
         # Build invoice data
@@ -141,29 +143,31 @@ class OdooPoster:
 
         invoice_vals = {
             "move_type": move_type,
-            "partner_id": partner_id,
+            "partner_id": int(partner_id),  # ensure plain int, not list
             "invoice_date": invoice_date,
             "ref": draft.description,
             "state": "draft",  # ALWAYS draft — never auto-post
             "invoice_line_ids": [(0, 0, {
                 "name": draft.description,
                 "quantity": 1.0,
-                "price_unit": draft.amount,
+                "price_unit": float(draft.amount),
             })]
         }
 
-        record_id = execute("account.move", "create", [[invoice_vals]])
+        # Pass single dict → Odoo returns one integer ID
+        raw_id = execute("account.move", "create", [invoice_vals])
+        record_id = raw_id[0] if isinstance(raw_id, list) else raw_id
 
         # Read back for invoice number
         invoice = execute(
-            "account.move", "read", [[record_id]],
+            "account.move", "read", [[int(record_id)]],
             {"fields": ["name", "state", "create_date"]}
         )[0]
 
         return {
             "odoo_record_id": record_id,
-            "invoice_number": invoice.get("name", f"INV/{record_id}"),
-            "status": invoice.get("state", "draft"),
+            "invoice_number": invoice.get("name") or f"INV/{record_id}",
+            "status": invoice.get("state") or "draft",
         }
 
     def _send_whatsapp_confirmation(self, draft: OdooDraft, result: Dict[str, Any]):

@@ -111,8 +111,29 @@ class ApprovalHandler:
         for file_path, draft_type in pending:
             logger.info(f"Processing {draft_type}: {file_path.name}")
             try:
+                # ── Odoo: call OdosPoster directly (bypasses MCP subprocess) ──────
+                if draft_type == "odoo":
+                    from local_agent.src.executors.odoo_poster import OdooPoster
+                    poster = OdooPoster(str(self.vault_path))
+                    result = poster.post_from_file(str(file_path))
+                    ok = result.get("success", False)
+                    # OdosPoster already handles file moves (Done/Failed) and WhatsApp
+                    self._processed.add(str(file_path))
+                    if ok:
+                        success_count += 1
+                        self._log_action(file_path, draft_type, "success")
+                        logger.info(
+                            f"✅ odoo invoice created: "
+                            f"{result.get('invoice_number')} (ID {result.get('odoo_record_id')})"
+                        )
+                    else:
+                        err = result.get("error", "Unknown error")
+                        self._log_action(file_path, draft_type, "failed", err)
+                        logger.warning(f"⚠️  odoo processing failed: {file_path.name} — {err}")
+                    continue  # skip generic process_approval() below
+
+                # ── Email / WhatsApp / LinkedIn: existing MCP path ────────────────
                 # Parse frontmatter BEFORE process_approval() moves the file
-                # parse_frontmatter returns (dict, body_string) tuple
                 frontmatter, _ = parse_frontmatter(str(file_path))
 
                 ok = process_approval(str(file_path), draft_type)

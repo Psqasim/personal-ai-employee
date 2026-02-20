@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getPendingApprovals, getVaultStatus } from "@/lib/vault";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const session = await auth();
 

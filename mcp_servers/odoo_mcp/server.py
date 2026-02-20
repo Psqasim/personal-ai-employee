@@ -151,21 +151,23 @@ class OdooMCPServer:
 
         try:
             # Create invoice (returns record ID)
-            record_id = self._execute_kw("account.move", "create", [[invoice_data]])
+            # Pass single dict — Odoo 14+ create([{...}]) returns int, not list
+            raw_id = self._execute_kw("account.move", "create", [invoice_data])
+            record_id = raw_id[0] if isinstance(raw_id, list) else raw_id
 
             # Read back invoice details
             invoice = self._execute_kw(
                 "account.move",
                 "read",
-                [[record_id]],
+                [[int(record_id)]],
                 {"fields": ["name", "state", "create_date"]}
             )[0]
 
             return {
                 "odoo_record_id": record_id,
-                "invoice_number": invoice["name"],
-                "status": invoice["state"],  # Should be 'draft'
-                "created_at": invoice["create_date"]
+                "invoice_number": invoice.get("name") or f"INV/{record_id}",
+                "status": invoice.get("state") or "draft",
+                "created_at": invoice.get("create_date", "")
             }
 
         except Exception as e:
@@ -221,21 +223,23 @@ class OdooMCPServer:
 
         try:
             # Create expense (returns record ID)
-            record_id = self._execute_kw("account.move", "create", [[expense_data]])
+            # Pass single dict — Odoo 14+ create([{...}]) returns int, not list
+            raw_id = self._execute_kw("account.move", "create", [expense_data])
+            record_id = raw_id[0] if isinstance(raw_id, list) else raw_id
 
             # Read back expense details
             expense = self._execute_kw(
                 "account.move",
                 "read",
-                [[record_id]],
+                [[int(record_id)]],
                 {"fields": ["name", "state", "create_date"]}
             )[0]
 
             return {
                 "odoo_record_id": record_id,
-                "expense_number": expense["name"],
-                "status": expense["state"],  # Should be 'draft'
-                "created_at": expense["create_date"]
+                "expense_number": expense.get("name") or f"BILL/{record_id}",
+                "status": expense.get("state") or "draft",
+                "created_at": expense.get("create_date", "")
             }
 
         except Exception as e:
@@ -323,15 +327,12 @@ class OdooMCPServer:
             if partner_ids:
                 return partner_ids[0]
 
-            # Create new partner if not found
-            partner_id = self._execute_kw(
-                "res.partner",
-                "create",
-                [[{"name": partner_name}]]
-            )
+            # Create new partner if not found — pass single dict, not list-of-dicts
+            raw = self._execute_kw("res.partner", "create", [{"name": partner_name}])
+            partner_id = raw[0] if isinstance(raw, list) else raw
 
             print(f"[odoo-mcp] Created new partner: {partner_name} (ID: {partner_id})", file=sys.stderr)
-            return partner_id
+            return int(partner_id)
 
         except Exception as e:
             raise Exception(f"Failed to resolve partner '{partner_name}': {str(e)}")
