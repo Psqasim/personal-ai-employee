@@ -11,9 +11,9 @@
 |------|--------|------------|
 | **Bronze** | ✅ Complete | 100% offline vault monitoring, auto dashboard |
 | **Silver** | ✅ Complete | AI priority analysis, task categorization, Gmail watcher |
-| **Gold** | ✅ Complete | **3/5 live integrations working!** Email ✅, Odoo ✅, WhatsApp ✅ |
-| **Platinum** | ✅ Complete | WhatsApp admin notifications, stale file recovery, cloud-ready |
-| **Hackathon+** | ✅ Complete | **Natural language commands, A2A orchestration, Odoo payments/contacts/bills** |
+| **Gold** | ✅ Complete | **Email ✅, Odoo ✅, WhatsApp ✅, LinkedIn ✅ MCP live** |
+| **Platinum** | ✅ Complete | Oracle Cloud VM 24/7, WhatsApp AI auto-reply, admin notifications |
+| **Hackathon+** | ✅ Complete | **NL commands, A2A orchestration, Odoo invoices/contacts/payments/bills** |
 
 ---
 
