@@ -19,19 +19,23 @@
 
 ## 🎬 Demo Evidence (Live Testing Results)
 
-**Platinum Tier Status:** ✅ **Production Ready** - WhatsApp admin notifications + stale file recovery live
+**Hackathon+ Status:** ✅ **Production Running** — Oracle Cloud VM live 24/7, WhatsApp AI auto-reply, Natural Language Commands, A2A orchestration
 
 ### Working Integrations (Live Tested)
 
 | Integration | Status | Evidence |
 |-------------|--------|----------|
-| **📧 Email (SMTP)** | ✅ **WORKING** | Email sent & delivered to Gmail |
-| **📊 Odoo Accounting** | ✅ **WORKING** | Draft invoice created (ID: 2) |
-| **💬 WhatsApp** | ✅ **WORKING** | QR authenticated, drafts generated |
-| 🔗 LinkedIn | ⏸️ Config needed | MCP implemented, needs token permissions |
-| 🐦 Twitter | ⏸️ Payment needed | MCP implemented, needs $5 API credit |
+| **📧 Email (SMTP)** | ✅ **WORKING** | Email sent & delivered to Gmail inbox |
+| **📊 Odoo Accounting** | ✅ **WORKING** | Draft invoices, contacts, payments, bills via XML-RPC |
+| **💬 WhatsApp Auto-Reply** | ✅ **WORKING** | AI replies generated & sent on Oracle Cloud VM (Playwright) |
+| **🤖 WhatsApp Commands** | ✅ **WORKING** | `!invoice Ali 5000` → vault draft created + confirmation sent |
+| **🧠 Natural Language CLI** | ✅ **WORKING** | `natural_command.py "invoice Ali 5000 Rs"` → draft in <3s |
+| **☁️ Oracle Cloud VM** | ✅ **WORKING** | 3 PM2 processes running 24/7 (orchestrator, git_sync, watcher) |
+| **🔄 A2A Orchestration** | ✅ **WORKING** | Cloud writes Needs_Action/ → local claims → executes → Done/ |
+| 🔗 LinkedIn | ⏸️ Token scope | MCP implemented, API token needs extra permissions |
+| 🐦 Twitter | ⏸️ API credit | MCP implemented, needs $5 API tier upgrade |
 
-**Note:** All 5 MCP servers are fully implemented and operational. LinkedIn/Twitter posting blocked by API tier limitations (not code issues). Email, Odoo, and WhatsApp are fully functional end-to-end.
+**Note:** All 5 MCP servers fully implemented. LinkedIn/Twitter blocked by external API limitations only (not code). Email, Odoo, WhatsApp, and the full A2A pipeline are working end-to-end.
 
 ### Screenshots
 
@@ -56,10 +60,11 @@
 *Human-in-the-loop approval system - email draft pending approval*
 
 **Test Results:**
-- ✅ 37/38 automated tests passing (97% coverage)
+- ✅ 47/48 automated tests passing (97% coverage)
 - ✅ All 5 MCP servers operational (100% connectivity)
-- ✅ 3/5 integrations fully working end-to-end
+- ✅ 6/9 integrations fully working end-to-end (Email, Odoo, WhatsApp, Commands, CLI, A2A)
 - ✅ Safety gates enforced (approval workflow, bounded loops, audit logging)
+- ✅ Oracle Cloud VM running stable — 3 PM2 processes, git auto-sync every 60s
 
 📄 **Full Validation Report:** [docs/reports/HACKATHON-FINAL-SUBMISSION.md](docs/reports/HACKATHON-FINAL-SUBMISSION.md)
 
@@ -205,6 +210,23 @@ echo "# Urgent client proposal — due today" > vault/Inbox/task.md
 | **Lessons Learned** | Challenges, solutions, recommendations | [gold/lessons-learned.md](docs/gold/lessons-learned.md) |
 | **Demo Script** | 5-10 min hackathon walkthrough | [DEMO-SCRIPT.md](DEMO-SCRIPT.md) |
 | **Agent Skills** | 7 reusable skills (email, whatsapp, linkedin, etc.) | [.claude/skills/](.claude/skills/) |
+
+### Platinum Tier
+
+| Guide | Description | Link |
+|-------|-------------|------|
+| **Oracle Cloud Setup** | Deploy cloud agent to Oracle Free Tier VM | [oracle-cloud-setup.md](docs/platinum/oracle-cloud-setup.md) |
+| **PM2 Config** | Process management, auto-restart, log rotation | [ecosystem.config.js](ecosystem.config.js) |
+| **WhatsApp Notifications** | 5 alert types, cooldowns, admin number setup | [whatsapp_notifier.py](cloud_agent/src/notifications/whatsapp_notifier.py) |
+
+### Hackathon+ (Natural Language Commands + A2A)
+
+| Guide | Description | Link |
+|-------|-------------|------|
+| **Command Router** | Claude-powered intent parser, 8 action types | [command_router.py](cloud_agent/src/command_router.py) |
+| **CLI Interface** | Natural language commands from terminal | [natural_command.py](scripts/natural_command.py) |
+| **WhatsApp Commands** | `!invoice`, `!email`, `!contact` via WhatsApp | [whatsapp_watcher.py](scripts/whatsapp_watcher.py) |
+| **A2A Orchestration** | Agent-to-agent via vault files + git sync | [local orchestrator](local_agent/src/orchestrator.py) |
 
 ---
 
