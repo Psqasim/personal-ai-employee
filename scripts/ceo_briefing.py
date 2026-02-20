@@ -3,16 +3,19 @@
 CEO Briefing Generator - Weekly Business Audit & Summary
 
 Generates weekly executive briefings every Sunday at 23:00 containing:
-- Task completion counts (from vault/Done/)
-- Pending/blocked items (from vault/Needs_Action/)
-- API cost summary (from vault/Logs/API_Usage/)
-- Proactive suggestions (AI-generated insights)
+- Task completion counts by category (Email, WhatsApp, LinkedIn, Odoo)
+- Pending/blocked items
+- API cost summary
+- Proactive suggestions
+- WhatsApp notification to admin
 
 Saves briefing to vault/Briefings/YYYY-MM-DD_Monday_Briefing.md
+Also updates vault/Dashboard.md with latest stats.
 
-Author: Personal AI Employee (Gold Tier)
-Created: 2026-02-14
-Tasks: T052 (briefing generator), T053 (proactive suggestions), T054 (scheduling), T055 (briefing sections)
+Usage:
+    python scripts/ceo_briefing.py --force          # generate now (test)
+    python scripts/ceo_briefing.py --schedule       # run Sunday 23:00 loop
+    python scripts/generate_ceo_briefing.py         # alias for --force
 """
 
 import os
@@ -23,345 +26,248 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 import re
 
-# Add agent_skills to path
+# Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from agent_skills.vault_parser import parse_frontmatter
 
 
+# ─── Date helpers ─────────────────────────────────────────────────────────────
+
 def calculate_week_dates() -> Dict[str, datetime]:
-    """
-    T052: Calculate previous week's date range (Monday-Sunday).
-
-    Returns:
-        Dict with week_start, week_end, briefing_date (next Monday)
-    """
+    """Calculate previous week's date range (Monday–Sunday)."""
     today = datetime.now()
-
-    # Find last Sunday (end of previous week)
-    days_since_sunday = (today.weekday() + 1) % 7  # Monday=0, Sunday=6
+    days_since_sunday = (today.weekday() + 1) % 7
     if days_since_sunday == 0:
-        # Today is Sunday, use yesterday's week
         last_sunday = today - timedelta(days=7)
     else:
         last_sunday = today - timedelta(days=days_since_sunday)
 
-    # Week start is last Monday (7 days before last Sunday)
     week_start = last_sunday - timedelta(days=6)
-
-    # Briefing date is next Monday after last Sunday
     briefing_date = last_sunday + timedelta(days=1)
 
     return {
         "week_start": week_start.replace(hour=0, minute=0, second=0, microsecond=0),
         "week_end": last_sunday.replace(hour=23, minute=59, second=59, microsecond=0),
-        "briefing_date": briefing_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        "briefing_date": briefing_date.replace(hour=0, minute=0, second=0, microsecond=0),
     }
 
 
-def count_completed_tasks(vault_path: str, week_start: datetime, week_end: datetime) -> int:
+# ─── Data collectors ───────────────────────────────────────────────────────────
+
+def count_done_by_category(vault_path: str, week_start: datetime, week_end: datetime) -> Dict[str, int]:
     """
-    T052: Count tasks completed during the week (from vault/Done/).
-
-    Args:
-        vault_path: Absolute path to vault root
-        week_start: Start of week (Monday 00:00)
-        week_end: End of week (Sunday 23:59)
-
-    Returns:
-        Count of completed tasks
+    Count completed tasks in vault/Done/<category>/ subdirectories.
+    Returns dict: { "Email": N, "WhatsApp": N, "LinkedIn": N, "Odoo": N, "Total": N }
     """
     vault = Path(vault_path)
     done_dir = vault / "Done"
+    counts: Dict[str, int] = {}
 
     if not done_dir.exists():
-        return 0
+        return {"Email": 0, "WhatsApp": 0, "LinkedIn": 0, "Odoo": 0, "Total": 0}
 
-    completed_count = 0
-
-    for task_file in done_dir.glob("*.md"):
-        # Check file modification time (when it was moved to Done/)
-        try:
-            mtime = datetime.fromtimestamp(task_file.stat().st_mtime)
-
-            if week_start <= mtime <= week_end:
-                completed_count += 1
-        except Exception:
+    total = 0
+    for category_dir in done_dir.iterdir():
+        if not category_dir.is_dir():
             continue
+        cat_name = category_dir.name
+        cat_count = 0
+        for md_file in category_dir.glob("*.md"):
+            try:
+                mtime = datetime.fromtimestamp(md_file.stat().st_mtime)
+                if week_start <= mtime <= week_end:
+                    cat_count += 1
+            except Exception:
+                continue
+        if cat_count:
+            counts[cat_name] = cat_count
+        total += cat_count
 
-    return completed_count
+    counts.setdefault("Email", 0)
+    counts.setdefault("WhatsApp", 0)
+    counts.setdefault("LinkedIn", 0)
+    counts.setdefault("Odoo", 0)
+    counts["Total"] = total
+    return counts
 
 
-def count_pending_tasks(vault_path: str) -> int:
-    """
-    T052: Count pending/blocked tasks (from vault/Needs_Action/).
-
-    Args:
-        vault_path: Absolute path to vault root
-
-    Returns:
-        Count of pending tasks
-    """
+def count_pending_approvals(vault_path: str) -> int:
+    """Count files in vault/Pending_Approval/ subdirs."""
     vault = Path(vault_path)
-    needs_action_dir = vault / "Needs_Action"
-
-    if not needs_action_dir.exists():
+    pending_dir = vault / "Pending_Approval"
+    if not pending_dir.exists():
         return 0
+    count = 0
+    for subdir in pending_dir.iterdir():
+        if subdir.is_dir():
+            count += sum(1 for f in subdir.glob("*.md"))
+        elif subdir.suffix == ".md":
+            count += 1
+    return count
 
-    return len(list(needs_action_dir.glob("*.md")))
 
-
-def calculate_api_cost(vault_path: str, week_start: datetime, week_end: datetime) -> float:
+def calculate_api_cost_week(vault_path: str, week_start: datetime, week_end: datetime) -> float:
     """
-    T052: Calculate total Claude API cost for the week (from vault/Logs/API_Usage/).
-
-    Args:
-        vault_path: Absolute path to vault root
-        week_start: Start of week
-        week_end: End of week
-
-    Returns:
-        Total API cost in USD
+    Sum API cost from vault/Logs/API_Usage/YYYY-MM-DD.md files.
+    Parses the markdown table column: | $0.0042 |
     """
     vault = Path(vault_path)
-    api_usage_dir = vault / "Logs" / "API_Usage"
-
-    if not api_usage_dir.exists():
+    api_dir = vault / "Logs" / "API_Usage"
+    if not api_dir.exists():
         return 0.0
 
-    total_cost = 0.0
-
-    # Read API usage logs (YYYY-MM-DD.md format)
-    for log_file in api_usage_dir.glob("*.md"):
+    total = 0.0
+    for log_file in api_dir.glob("*.md"):
         try:
-            # Parse date from filename
-            date_str = log_file.stem  # YYYY-MM-DD
+            date_str = log_file.stem
             log_date = datetime.strptime(date_str, "%Y-%m-%d")
-
-            if week_start <= log_date <= week_end:
-                # Parse log file for cost entries
-                with open(log_file, 'r', encoding='utf-8') as f:
-                    content = f.read()
-
-                # Extract cost values (pattern: cost_usd: 0.XX or $0.XX)
-                cost_matches = re.findall(r'(?:cost_usd:\s*|cost:\s*\$?)(\d+\.\d+)', content)
-                for cost_str in cost_matches:
-                    total_cost += float(cost_str)
-
-        except Exception as e:
-            print(f"[ceo_briefing] Error parsing API usage log {log_file}: {e}")
+            if not (week_start.date() <= log_date.date() <= week_end.date()):
+                continue
+            with open(log_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("|") and "$" in line:
+                        parts = line.split("|")
+                        # Column 6 (0-indexed) is Cost column
+                        for part in parts:
+                            m = re.search(r'\$(\d+\.\d+)', part.strip())
+                            if m:
+                                total += float(m.group(1))
+                                break
+        except Exception:
             continue
+    return round(total, 4)
 
-    return round(total_cost, 2)
+
+def get_completed_items_list(vault_path: str, week_start: datetime, week_end: datetime) -> List[str]:
+    """Get list of completed task titles from Done/ subdirs."""
+    vault = Path(vault_path)
+    done_dir = vault / "Done"
+    items = []
+    if not done_dir.exists():
+        return items
+
+    for cat_dir in done_dir.iterdir():
+        if not cat_dir.is_dir():
+            continue
+        cat = cat_dir.name
+        for md_file in sorted(cat_dir.glob("*.md")):
+            try:
+                mtime = datetime.fromtimestamp(md_file.stat().st_mtime)
+                if not (week_start <= mtime <= week_end):
+                    continue
+                fm, _ = parse_frontmatter(str(md_file))
+                title = (fm.get("subject") or fm.get("title") or
+                         fm.get("customer") or md_file.stem)
+                items.append(f"- [{cat}] {title} — {mtime.strftime('%b %d')}")
+            except Exception:
+                items.append(f"- [{cat}] {md_file.stem}")
+
+    return items[:30]
 
 
-def generate_proactive_suggestions(vault_path: str) -> List[str]:
-    """
-    T053: Generate proactive suggestions using AI or fallback to data-based insights.
-
-    AI suggestions are generated by analyzing:
-    - vault/Pending_Approval/ (unapproved drafts)
-    - vault/Needs_Action/ (blocked items)
-    - vault/Inbox/ (old/stale tasks)
-    - vault/Plans/ (incomplete plans)
-
-    Args:
-        vault_path: Absolute path to vault root
-
-    Returns:
-        List of 3+ actionable suggestions
-    """
+def get_suggestions(vault_path: str) -> List[str]:
+    """Generate proactive suggestions based on vault state."""
     vault = Path(vault_path)
     suggestions = []
 
-    # Suggestion 1: Check for old pending approvals
-    pending_approval_dir = vault / "Pending_Approval"
-    if pending_approval_dir.exists():
-        old_approvals = []
-        for subdir in pending_approval_dir.glob("*"):
-            if subdir.is_dir():
-                for approval_file in subdir.glob("*.md"):
-                    # Check if older than 3 days
-                    mtime = datetime.fromtimestamp(approval_file.stat().st_mtime)
-                    age_days = (datetime.now() - mtime).days
+    # Old pending approvals
+    pending_dir = vault / "Pending_Approval"
+    if pending_dir.exists():
+        for subdir in pending_dir.iterdir():
+            if not subdir.is_dir():
+                continue
+            for f in subdir.glob("*.md"):
+                age = (datetime.now() - datetime.fromtimestamp(f.stat().st_mtime)).days
+                if age >= 3:
+                    suggestions.append(
+                        f"**{subdir.name} approval pending {age} days** – `{f.name}` needs review"
+                    )
 
-                    if age_days >= 3:
-                        old_approvals.append((approval_file.name, age_days, subdir.name))
-
-        if old_approvals:
-            # Take first 3 old approvals
-            for filename, age, category in old_approvals[:3]:
-                suggestions.append(
-                    f"**{category} approval pending for {age} days**: "
-                    f"`vault/Pending_Approval/{category}/{filename}` - Review and approve/reject"
-                )
-
-    # Suggestion 2: Check for blocked plans
-    in_progress_dir = vault / "In_Progress"
-    if in_progress_dir.exists():
-        blocked_plans = []
-        for plan_dir in in_progress_dir.glob("*"):
-            if plan_dir.is_dir():
-                state_file = plan_dir / "state.md"
-                if state_file.exists():
-                    # Check iterations_remaining
-                    try:
-                        with open(state_file, 'r', encoding='utf-8') as f:
-                            content = f.read()
-
-                        # Parse iterations_remaining from YAML frontmatter
-                        match = re.search(r'iterations_remaining:\s*(\d+)', content)
-                        if match:
-                            iterations_remaining = int(match.group(1))
-                            if iterations_remaining <= 3:
-                                blocked_plans.append((plan_dir.name, iterations_remaining))
-                    except Exception:
-                        continue
-
-        if blocked_plans:
-            for plan_id, iterations in blocked_plans[:2]:
-                suggestions.append(
-                    f"**Plan '{plan_id}' running low on iterations ({iterations}/10 remaining)**: "
-                    f"Review `vault/In_Progress/{plan_id}/state.md` - May need manual intervention soon"
-                )
-
-    # Suggestion 3: Check for high-priority emails in Inbox
+    # High-priority emails in Inbox
     inbox_dir = vault / "Inbox"
     if inbox_dir.exists():
-        high_priority_emails = []
-        for email_file in inbox_dir.glob("EMAIL_*.md"):
-            try:
-                frontmatter, _ = parse_frontmatter(str(email_file))
+        hp = [f for f in inbox_dir.glob("EMAIL_*.md")
+              if (datetime.now() - datetime.fromtimestamp(f.stat().st_mtime)).total_seconds() > 86400]
+        if hp:
+            suggestions.append(f"**{len(hp)} emails in Inbox >24h old** – review vault/Inbox/")
 
-                if frontmatter.get("priority") == "High":
-                    mtime = datetime.fromtimestamp(email_file.stat().st_mtime)
-                    age_hours = (datetime.now() - mtime).total_seconds() / 3600
-
-                    if age_hours >= 24:
-                        high_priority_emails.append((email_file.name, int(age_hours)))
-            except Exception:
-                continue
-
-        if high_priority_emails:
-            count = len(high_priority_emails)
-            oldest_age = max(age for _, age in high_priority_emails)
-            suggestions.append(
-                f"**{count} high-priority emails unanswered for >24h** (oldest: {oldest_age}h): "
-                f"Review `vault/Inbox/` for EMAIL_* files with priority='High'"
-            )
-
-    # Suggestion 4: Check Needs_Action/ for escalations
-    needs_action_dir = vault / "Needs_Action"
-    if needs_action_dir.exists():
-        escalation_count = len(list(needs_action_dir.glob("*.md")))
-
-        if escalation_count > 5:
-            suggestions.append(
-                f"**{escalation_count} items requiring attention in Needs_Action/**: "
-                f"Review `vault/Needs_Action/` - Contains escalations, blocked plans, and errors"
-            )
-
-    # Suggestion 5: Default suggestions if none generated
     if not suggestions:
-        suggestions.append("**All systems operating smoothly** - No urgent items detected")
-        suggestions.append("**Continue current pace** - Task completion on track")
-        suggestions.append("**Monitor API costs** - Staying within budget (<$0.10/day)")
+        suggestions.append("**All systems healthy** – no urgent items detected")
+        suggestions.append("**Continue current pace** – task throughput is on track")
 
-    return suggestions[:10]  # Max 10 suggestions
-
-
-def generate_completed_tasks_list(vault_path: str, week_start: datetime, week_end: datetime) -> List[str]:
-    """
-    T055: Generate list of completed tasks with file links.
-
-    Args:
-        vault_path: Absolute path to vault root
-        week_start: Start of week
-        week_end: End of week
-
-    Returns:
-        List of markdown task descriptions
-    """
-    vault = Path(vault_path)
-    done_dir = vault / "Done"
-
-    if not done_dir.exists():
-        return []
-
-    completed_tasks = []
-
-    for task_file in done_dir.glob("*.md"):
-        try:
-            mtime = datetime.fromtimestamp(task_file.stat().st_mtime)
-
-            if week_start <= mtime <= week_end:
-                # Parse task file for subject/title
-                frontmatter, _ = parse_frontmatter(str(task_file))
-
-                title = (
-                    frontmatter.get("subject") or
-                    frontmatter.get("title") or
-                    frontmatter.get("objective") or
-                    task_file.stem
-                )
-
-                completed_date = mtime.strftime("%Y-%m-%d")
-
-                completed_tasks.append(f"- {title} - Completed {completed_date} [[vault/Done/{task_file.name}]]")
-
-        except Exception:
-            continue
-
-    return completed_tasks[:50]  # Max 50 tasks (avoid huge lists)
+    return suggestions[:6]
 
 
-def generate_pending_items_summary(vault_path: str) -> str:
-    """
-    T055: Generate summary of pending items from vault/Needs_Action/.
+# ─── WhatsApp notification ─────────────────────────────────────────────────────
 
-    Returns:
-        Markdown summary text
-    """
-    vault = Path(vault_path)
-    needs_action_dir = vault / "Needs_Action"
+def send_whatsapp_briefing(counts: Dict[str, int], api_cost: float, date_str: str) -> None:
+    """Send CEO briefing summary via WhatsApp."""
+    try:
+        from cloud_agent.src.notifications.whatsapp_notifier import send_whatsapp_message
+        msg = (
+            f"📊 *CEO Briefing — Week of {date_str}*\n\n"
+            f"📧 Emails processed: {counts.get('Email', 0)}\n"
+            f"💬 WhatsApp replies: {counts.get('WhatsApp', 0)}\n"
+            f"💼 LinkedIn posts: {counts.get('LinkedIn', 0)}\n"
+            f"🧾 Odoo invoices: {counts.get('Odoo', 0)}\n"
+            f"✅ Total completed: {counts.get('Total', 0)}\n"
+            f"💰 API cost: ${api_cost:.4f}\n\n"
+            f"Full report: vault/Briefings/latest"
+        )
+        send_whatsapp_message(msg)
+        print("[ceo_briefing] WhatsApp notification sent")
+    except Exception as e:
+        print(f"[ceo_briefing] WhatsApp notification failed (non-fatal): {e}")
 
-    if not needs_action_dir.exists() or not list(needs_action_dir.glob("*.md")):
-        return "No items requiring action"
 
-    # Categorize items by type (escalations, blocked plans, errors)
-    escalations = []
-    blocked_plans = []
-    errors = []
+# ─── Dashboard.md update ───────────────────────────────────────────────────────
 
-    for item_file in needs_action_dir.glob("*.md"):
-        filename = item_file.name.lower()
+def update_dashboard(vault_path: str, counts: Dict[str, int], api_cost: float,
+                     briefing_file: str, week_start: datetime) -> None:
+    """Overwrite the ## 📊 CEO Briefing Stats section in vault/Dashboard.md."""
+    dashboard_path = Path(vault_path) / "Dashboard.md"
+    if not dashboard_path.exists():
+        return
 
-        if "escalat" in filename:
-            escalations.append(item_file.name)
-        elif "blocked" in filename or "plan" in filename:
-            blocked_plans.append(item_file.name)
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    stats_block = (
+        f"\n## 📊 CEO Briefing — {week_start.strftime('%b %d')} week\n\n"
+        f"| Category | Completed |\n"
+        f"|----------|----------|\n"
+        f"| 📧 Email | {counts.get('Email', 0)} |\n"
+        f"| 💬 WhatsApp | {counts.get('WhatsApp', 0)} |\n"
+        f"| 💼 LinkedIn | {counts.get('LinkedIn', 0)} |\n"
+        f"| 🧾 Odoo | {counts.get('Odoo', 0)} |\n"
+        f"| **Total** | **{counts.get('Total', 0)}** |\n\n"
+        f"💰 **API Cost (week):** ${api_cost:.4f}  \n"
+        f"📄 **Report:** `{Path(briefing_file).name}`  \n"
+        f"🕐 **Generated:** {now}\n"
+    )
+
+    content = dashboard_path.read_text(encoding="utf-8")
+    marker = "## 📊 CEO Briefing"
+    if marker in content:
+        # Replace existing block
+        idx = content.index(marker)
+        # Find next ## after the block
+        next_h2 = content.find("\n## ", idx + 1)
+        if next_h2 != -1:
+            content = content[:idx] + stats_block.strip() + "\n\n" + content[next_h2:]
         else:
-            errors.append(item_file.name)
+            content = content[:idx] + stats_block.strip() + "\n"
+    else:
+        content += stats_block
 
-    summary = ""
-
-    if escalations:
-        summary += f"- **{len(escalations)} Escalations**: {', '.join(escalations[:3])}\n"
-    if blocked_plans:
-        summary += f"- **{len(blocked_plans)} Blocked Plans**: {', '.join(blocked_plans[:3])}\n"
-    if errors:
-        summary += f"- **{len(errors)} Errors/Issues**: {', '.join(errors[:3])}\n"
-
-    return summary or "No items requiring action"
+    dashboard_path.write_text(content, encoding="utf-8")
+    print(f"[ceo_briefing] Dashboard.md updated")
 
 
-def generate_briefing(vault_path: str, force: bool = False) -> str:
+# ─── Main generator ────────────────────────────────────────────────────────────
+
+def generate_briefing(vault_path: str, send_wa: bool = True) -> str:
     """
-    T052-T055: Generate complete CEO Briefing file.
-
-    Args:
-        vault_path: Absolute path to vault root
-        force: If True, generate briefing immediately (for testing)
+    Generate complete CEO Briefing, update Dashboard.md, send WhatsApp.
 
     Returns:
         Path to generated briefing file
@@ -370,29 +276,18 @@ def generate_briefing(vault_path: str, force: bool = False) -> str:
     briefings_dir = vault / "Briefings"
     briefings_dir.mkdir(parents=True, exist_ok=True)
 
-    # T052: Calculate week dates
     dates = calculate_week_dates()
     week_start = dates["week_start"]
     week_end = dates["week_end"]
     briefing_date = dates["briefing_date"]
 
-    # T052: Gather data
-    tasks_completed_count = count_completed_tasks(vault_path, week_start, week_end)
-    tasks_pending_count = count_pending_tasks(vault_path)
-    api_cost_week = calculate_api_cost(vault_path, week_start, week_end)
+    counts = count_done_by_category(vault_path, week_start, week_end)
+    pending_count = count_pending_approvals(vault_path)
+    api_cost = calculate_api_cost_week(vault_path, week_start, week_end)
+    suggestions = get_suggestions(vault_path)
+    completed_items = get_completed_items_list(vault_path, week_start, week_end)
 
-    # T053: Generate proactive suggestions
-    proactive_suggestions = generate_proactive_suggestions(vault_path)
-
-    # T055: Generate detailed sections
-    completed_tasks_list = generate_completed_tasks_list(vault_path, week_start, week_end)
-    pending_items_summary = generate_pending_items_summary(vault_path)
-
-    # Determine if AI-generated or data-only
-    # (In production, this would check if Claude API was used for suggestions)
-    generated_by = "data_only"  # Simplified for now
-
-    # T055: Build briefing content
+    on_track = "✓ on track" if api_cost < 0.70 else "⚠️ above target"
     briefing_filename = f"{briefing_date.strftime('%Y-%m-%d')}_Monday_Briefing.md"
     briefing_file = briefings_dir / briefing_filename
 
@@ -400,129 +295,115 @@ def generate_briefing(vault_path: str, force: bool = False) -> str:
 briefing_date: {briefing_date.strftime('%Y-%m-%d')}
 week_start: {week_start.strftime('%Y-%m-%d')}
 week_end: {week_end.strftime('%Y-%m-%d')}
-tasks_completed_count: {tasks_completed_count}
-tasks_pending_count: {tasks_pending_count}
-api_cost_week: {api_cost_week}
-generated_by: {generated_by}
+email_completed: {counts.get('Email', 0)}
+whatsapp_completed: {counts.get('WhatsApp', 0)}
+linkedin_completed: {counts.get('LinkedIn', 0)}
+odoo_completed: {counts.get('Odoo', 0)}
+total_completed: {counts.get('Total', 0)}
+pending_approvals: {pending_count}
+api_cost_week: {api_cost}
 generated_at: {datetime.now().isoformat()}
 ---
 
-# CEO Briefing: Week of {briefing_date.strftime('%B %d, %Y')}
+# CEO Briefing: Week of {week_start.strftime('%B %d')} – {week_end.strftime('%B %d, %Y')}
 
 ## Executive Summary
 
-**Tasks Completed This Week**: {tasks_completed_count}
-**Tasks Pending/Blocked**: {tasks_pending_count}
-**API Cost**: ${api_cost_week:.2f} (target: <$0.70/week = $0.10/day, {"✓ on track" if api_cost_week < 0.70 else "⚠️ above target"})
-
-**Week Range**: {week_start.strftime('%B %d')} - {week_end.strftime('%B %d, %Y')}
+| Metric | Value |
+|--------|-------|
+| 📧 Emails processed | {counts.get('Email', 0)} |
+| 💬 WhatsApp replies | {counts.get('WhatsApp', 0)} |
+| 💼 LinkedIn posts | {counts.get('LinkedIn', 0)} |
+| 🧾 Odoo invoices | {counts.get('Odoo', 0)} |
+| ✅ **Total completed** | **{counts.get('Total', 0)}** |
+| ⏳ Pending approvals | {pending_count} |
+| 💰 API cost (week) | ${api_cost:.4f} ({on_track}) |
 
 ---
 
-## Week in Review ({week_start.strftime('%b %d')} - {week_end.strftime('%b %d')})
+## Completed This Week
 
-### Completed Tasks
-
-{"".join(completed_tasks_list) if completed_tasks_list else "- No tasks completed this week"}
+{chr(10).join(completed_items) if completed_items else "- No tasks completed this week"}
 
 ---
 
 ## Pending Items
 
-{pending_items_summary}
-
-**Total Items Requiring Attention**: {tasks_pending_count}
+**{pending_count}** item(s) awaiting approval in `vault/Pending_Approval/`.
 
 ---
 
 ## Proactive Suggestions
 
-{"".join(f"{i}. {suggestion}\n" for i, suggestion in enumerate(proactive_suggestions, 1))}
+{chr(10).join(f"{i}. {s}" for i, s in enumerate(suggestions, 1))}
 
 ---
 
 ## Next Week Focus
 
-Based on pending items and current workload:
-
-1. **Clear Pending Approvals**: Review `vault/Pending_Approval/` for drafts awaiting approval
-2. **Address Escalations**: Review `vault/Needs_Action/` for blocked plans and errors
-3. **Maintain Task Flow**: Continue current pace ({tasks_completed_count} tasks/week)
-4. **Monitor API Costs**: {"Maintain current usage" if api_cost_week < 0.70 else "Reduce API calls to stay under $0.10/day target"}
+1. **Clear Pending Approvals** — review `vault/Pending_Approval/`
+2. **Monitor API costs** — {"maintain current usage" if api_cost < 0.70 else "reduce API calls to stay under $0.10/day target"}
+3. **Continue task flow** — {counts.get('Total', 0)} completions/week pace
 
 ---
 
-**Briefing Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-**Generated By**: Gold Tier Personal AI Employee (Data-Based Analysis)
-**Next Briefing**: {(briefing_date + timedelta(days=7)).strftime('%Y-%m-%d')} (next Monday)
+*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · Personal AI Employee (Gold Tier)*
+*Next briefing: {(briefing_date + timedelta(days=7)).strftime('%Y-%m-%d')}*
 """
 
-    # Write briefing file
-    with open(briefing_file, 'w', encoding='utf-8') as f:
-        f.write(content)
+    briefing_file.write_text(content, encoding="utf-8")
+    print(f"[ceo_briefing] Briefing saved: {briefing_file}")
 
-    print(f"[ceo_briefing] Briefing generated: {briefing_file}")
+    # Update Dashboard.md
+    update_dashboard(vault_path, counts, api_cost, str(briefing_file), week_start)
+
+    # WhatsApp notification
+    if send_wa:
+        send_whatsapp_briefing(counts, api_cost, week_start.strftime("%b %d"))
+
     return str(briefing_file)
 
 
-def schedule_weekly_briefing(vault_path: str):
-    """
-    T054: Schedule briefing generation every Sunday at 23:00.
-
-    Uses schedule library for cron-like scheduling.
-
-    Args:
-        vault_path: Absolute path to vault root
-    """
+def schedule_weekly_briefing(vault_path: str) -> None:
+    """Run in loop and trigger every Sunday at 23:00."""
     import schedule
     import time
 
     def job():
-        print(f"[ceo_briefing] Scheduled briefing generation triggered (Sunday 23:00)")
+        print("[ceo_briefing] Sunday 23:00 — generating briefing…")
         try:
-            generate_briefing(vault_path, force=False)
+            generate_briefing(vault_path, send_wa=True)
         except Exception as e:
-            print(f"[ceo_briefing] Error during scheduled briefing: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"[ceo_briefing] Error: {e}")
 
-    # Schedule for Sunday at 23:00
     schedule.every().sunday.at("23:00").do(job)
+    print("[ceo_briefing] Scheduler running (Sunday 23:00)")
 
-    print(f"[ceo_briefing] Briefing scheduled for every Sunday at 23:00")
-    print(f"[ceo_briefing] Monitoring vault: {vault_path}")
-
-    # Run scheduler loop
     while True:
         schedule.run_pending()
-        time.sleep(60)  # Check every minute
+        time.sleep(60)
 
 
-# Main entry point
+# ─── CLI ───────────────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="CEO Briefing Generator - Weekly Business Audit")
+    parser = argparse.ArgumentParser(description="CEO Briefing Generator")
     parser.add_argument("--vault", default="vault", help="Path to vault directory")
-    parser.add_argument("--force", action="store_true", help="Generate briefing immediately (for testing)")
-    parser.add_argument("--schedule", action="store_true", help="Run in scheduled mode (Sunday 23:00)")
-
+    parser.add_argument("--force", action="store_true", help="Generate immediately")
+    parser.add_argument("--no-wa", action="store_true", help="Skip WhatsApp notification")
+    parser.add_argument("--schedule", action="store_true", help="Run scheduled loop (Sunday 23:00)")
     args = parser.parse_args()
 
     vault_path = os.path.abspath(args.vault)
-
     if not Path(vault_path).exists():
-        print(f"[ceo_briefing] Error: Vault path does not exist: {vault_path}")
+        print(f"[ceo_briefing] Vault not found: {vault_path}")
         sys.exit(1)
 
     if args.force:
-        # T052-T055: Manual trigger mode (for testing)
-        print(f"[ceo_briefing] Force mode - generating briefing now...")
-        briefing_file = generate_briefing(vault_path, force=True)
-        print(f"[ceo_briefing] Briefing saved to: {briefing_file}")
-
+        path = generate_briefing(vault_path, send_wa=not args.no_wa)
+        print(f"[ceo_briefing] Done → {path}")
     elif args.schedule:
-        # T054: Scheduled mode (runs continuously)
         schedule_weekly_briefing(vault_path)
-
     else:
-        print("[ceo_briefing] Use --force to generate now, or --schedule to run in background")
+        print("Use --force to generate now, or --schedule for Sunday 23:00 loop")
         print("Example: python scripts/ceo_briefing.py --vault vault --force")

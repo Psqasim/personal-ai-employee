@@ -49,6 +49,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { href: "/dashboard", label: "📋 Approvals", active: pathname === "/dashboard" },
     { href: "/dashboard/status", label: "🏥 MCP Health", active: pathname === "/dashboard/status" },
     { href: "/dashboard/activity", label: "📊 Activity", active: pathname === "/dashboard/activity" },
+    { href: "/dashboard/briefings", label: "📊 CEO Briefings", active: pathname === "/dashboard/briefings" },
   ];
 
   return (

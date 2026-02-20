@@ -17,6 +17,7 @@ from agent_skills.env_validator import EnvValidator
 from agent_skills.claim_manager import ClaimManager
 from agent_skills.api_usage_tracker import APIUsageTracker
 from agent_skills.stale_file_recovery import recover_stale_files
+from agent_skills.resource_monitor import ResourceMonitor
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,9 +48,13 @@ class LocalOrchestrator:
         # Initialize components
         self.claim_mgr = ClaimManager(self.vault_path, self.agent_id)
         self.api_tracker = APIUsageTracker(self.vault_path, self.agent_id)
+        self.resource_monitor = ResourceMonitor(self.vault_path)
 
         # Track last stale recovery check (run hourly)
         self._last_stale_check: float = 0.0
+        # Track last CEO briefing check (run hourly on Sunday 23:xx)
+        self._last_briefing_check: float = 0.0
+        self._briefing_sent_this_sunday: str = ""  # "YYYY-WW" to avoid double-send
 
         logger.info("Local Orchestrator initialized")
 
@@ -89,6 +94,34 @@ class LocalOrchestrator:
 
                 pass
 
+    def check_ceo_briefing(self):
+        """
+        FR-P054: Check every hour if it's Sunday 23:xx — if so, generate CEO briefing.
+        Uses week ID to avoid double-sending.
+        """
+        now = time.time()
+        if now - self._last_briefing_check < 3600:
+            return
+        self._last_briefing_check = now
+
+        dt = datetime.now()
+        # Sunday = weekday() 6, hour 23
+        if dt.weekday() != 6 or dt.hour != 23:
+            return
+
+        week_id = dt.strftime("%Y-%W")  # e.g. "2026-08"
+        if self._briefing_sent_this_sunday == week_id:
+            return  # already sent this week
+
+        logger.info("📊 Sunday 23:00 — generating CEO briefing…")
+        try:
+            from scripts.ceo_briefing import generate_briefing
+            generate_briefing(self.vault_path, send_wa=True)
+            self._briefing_sent_this_sunday = week_id
+            logger.info("✅ CEO briefing generated")
+        except Exception as e:
+            logger.error(f"CEO briefing failed: {e}")
+
     def recover_stale(self):
         """
         FR-P016: Check vault/In_Progress/ every hour for stale files (>24h).
@@ -117,6 +150,12 @@ class LocalOrchestrator:
 
             # FR-P016: Stale file recovery (runs hourly)
             self.recover_stale()
+
+            # FR-P054: CEO briefing (Sunday 23:00)
+            self.check_ceo_briefing()
+
+            # FR-P048: Resource monitoring (CPU/Memory alerts every 5 min)
+            self.resource_monitor.check()
 
             logger.debug("Orchestration cycle complete")
 

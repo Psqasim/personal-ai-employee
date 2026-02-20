@@ -2,10 +2,14 @@
 API Usage Tracker - Log Claude API calls for cost tracking
 Writes to vault/Logs/API_Usage/YYYY-MM-DD.md
 """
+import os
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
 import logging
+
+# FR-P053: Daily cost alert threshold (override via .env)
+_COST_ALERT_THRESHOLD = float(os.getenv("COST_ALERT_THRESHOLD", "1.00"))
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +42,9 @@ class APIUsageTracker:
         self.agent_id = agent_id
         self.log_dir = self.vault_path / "Logs" / "API_Usage"
         self.log_dir.mkdir(parents=True, exist_ok=True)
+
+        # FR-P053: Track last alert date to send once per day
+        self._cost_alert_sent_date: str = ""
 
     def log_api_call(
         self,
@@ -84,6 +91,9 @@ class APIUsageTracker:
             f"API call logged: {model} - {prompt_tokens + completion_tokens} tokens - ${cost_usd:.4f}"
         )
 
+        # FR-P053: Check daily cost threshold after each call
+        self._check_cost_alert(timestamp)
+
         return cost_usd
 
     def calculate_cost(self, model: str, prompt_tokens: int, completion_tokens: int) -> float:
@@ -112,6 +122,29 @@ class APIUsageTracker:
             f.write(f"# Claude API Usage - {date}\n\n")
             f.write("| Time | Agent | Model | Prompt Tokens | Completion Tokens | Cost (USD) | Task Type |\n")
             f.write("|------|-------|-------|---------------|-------------------|------------|----------|\n")
+
+    def _check_cost_alert(self, timestamp: datetime) -> None:
+        """FR-P053: Send WhatsApp alert if daily cost exceeds threshold (once per day)."""
+        today = timestamp.strftime("%Y-%m-%d")
+        if self._cost_alert_sent_date == today:
+            return  # already alerted today
+
+        daily_total = self.get_daily_total(today)
+        if daily_total <= _COST_ALERT_THRESHOLD:
+            return
+
+        self._cost_alert_sent_date = today
+        msg = (
+            f"⚠️ *API Cost Alert* — {today}\n"
+            f"Daily spend: *${daily_total:.4f}* exceeds threshold ${_COST_ALERT_THRESHOLD:.2f}\n"
+            f"Review: vault/Logs/API_Usage/{today}.md"
+        )
+        logger.warning(f"Cost alert triggered: ${daily_total:.4f} > ${_COST_ALERT_THRESHOLD:.2f}")
+        try:
+            from cloud_agent.src.notifications.whatsapp_notifier import notify_critical_error
+            notify_critical_error(msg)
+        except Exception as e:
+            logger.debug(f"Cost alert WhatsApp failed: {e}")
 
     def get_daily_total(self, date: Optional[str] = None) -> float:
         """
