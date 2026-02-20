@@ -273,9 +273,14 @@ class CloudOrchestrator:
     def poll_gmail(self):
         """
         Poll Gmail for new emails and write to vault/Inbox/.
+        Set ENABLE_GMAIL_WATCHER=false to disable entirely.
         Auto-disables for 6 hours after 3 consecutive auth failures to avoid
         spamming logs with invalid_grant / SSL errors.
         """
+        # Respect ENABLE_GMAIL_WATCHER env var (default true for backwards compat)
+        if os.getenv("ENABLE_GMAIL_WATCHER", "true").lower() == "false":
+            return
+
         now = time.time()
 
         # Check if Gmail is temporarily disabled due to repeated auth errors
