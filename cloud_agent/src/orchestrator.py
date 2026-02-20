@@ -13,6 +13,15 @@ from datetime import datetime, timezone
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+# Load environment variables from .env.cloud (or ENV_FILE override)
+try:
+    from dotenv import load_dotenv
+    _env_file = os.getenv("ENV_FILE", str(project_root / ".env"))
+    load_dotenv(_env_file)
+    load_dotenv(project_root / ".env.cloud", override=True)  # no-op if missing
+except ImportError:
+    pass  # env vars must be set manually
+
 from agent_skills.env_validator import EnvValidator
 from agent_skills.git_sync_state import GitSyncStateManager
 from agent_skills.api_usage_tracker import APIUsageTracker
