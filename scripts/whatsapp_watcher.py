@@ -23,7 +23,7 @@ import logging
 from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional
 
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
@@ -67,6 +67,8 @@ _replied_cache: set = set()
 # Shared lock file — prevents watcher and MCP server from opening Chrome simultaneously
 BROWSER_LOCK_FILE = "/tmp/whatsapp_browser.lock"
 
+VAULT_PATH = os.getenv("VAULT_PATH", str(project_root / "vault"))
+
 # WhatsApp Web selectors
 MSG_INPUT   = 'div[contenteditable="true"][data-tab="10"]'
 CHAT_LIST   = 'div[aria-label="Chat list"], #pane-side'
@@ -99,6 +101,72 @@ def _browser_lock(timeout: int = 90):
         except Exception:
             pass
         lock_f.close()
+
+
+# ── Admin command handler ─────────────────────────────────────────────────────
+def handle_admin_command(sender: str, message: str) -> Optional[str]:
+    """
+    If the message is an admin command, parse it, create a vault draft,
+    and return a confirmation reply string.
+    Returns None if not an admin command (caller should use normal reply flow).
+    """
+    try:
+        from cloud_agent.src.command_router import is_admin_command, route_command
+    except ImportError as e:
+        logger.warning(f"command_router import failed: {e}")
+        return None
+
+    if not is_admin_command(sender, message):
+        return None
+
+    logger.info(f"🎯 Admin command from {sender}: {message[:60]}")
+
+    result = route_command(message, vault_path=VAULT_PATH)
+
+    if result["success"]:
+        action = result["action"]
+        intent = result["intent"]
+        draft_path = result["draft_path"] or ""
+        draft_name = Path(draft_path).name if draft_path else "draft"
+
+        # Build human-readable confirmation
+        action_labels = {
+            "create_draft_invoice": "📋 Invoice draft",
+            "create_draft_expense": "💸 Expense draft",
+            "create_contact":       "👤 Contact draft",
+            "register_payment":     "💳 Payment draft",
+            "create_purchase_bill": "🧾 Vendor bill draft",
+            "send_email":           "📧 Email draft",
+            "send_message":         "💬 WhatsApp draft",
+            "create_post":          "🔗 LinkedIn draft",
+        }
+        label = action_labels.get(action, f"📝 {action}")
+
+        details = ""
+        if action in ("create_draft_invoice", "create_draft_expense", "create_purchase_bill"):
+            details = f"\nCustomer/Vendor: {intent.get('customer', intent.get('vendor', '?'))}\nAmount: {intent.get('currency', 'PKR')} {intent.get('amount', 0):,}"
+        elif action == "send_email":
+            details = f"\nTo: {intent.get('to', '?')}\nSubject: {intent.get('subject', '?')}"
+        elif action == "send_message":
+            details = f"\nTo: {intent.get('chat_id', '?')}"
+        elif action == "create_contact":
+            details = f"\nName: {intent.get('customer', intent.get('name', '?'))}"
+        elif action == "register_payment":
+            details = f"\nInvoice: {intent.get('invoice_number', '?')}"
+
+        reply = (
+            f"✅ {label} created!\n"
+            f"{details}\n\n"
+            f"📂 File: {draft_name}\n"
+            f"👉 Open dashboard to approve → execute."
+        ).strip()
+
+        logger.info(f"✅ Admin command processed: {action} → {draft_name}")
+        return reply
+    else:
+        err = result.get("error", "Unknown error")
+        logger.warning(f"⚠️ Admin command failed: {err}")
+        return f"❌ Could not process command: {err}\n\nTry: \"invoice Ali 5000 Rs web design\""
 
 
 # ── Claude API ───────────────────────────────────────────────────────────────
@@ -315,7 +383,12 @@ def run_cycle():
     # ── Phase 2: Generate replies (no browser, lock released) ─────────────────
     pending: list[tuple[str, str, str]] = []   # (sender, last_msg, reply)
     for sender, last_msg in inbox:
-        reply = generate_reply(sender, last_msg)
+        # Check for admin commands FIRST — if matched, skip normal reply
+        cmd_reply = handle_admin_command(sender, last_msg)
+        if cmd_reply is not None:
+            reply = cmd_reply
+        else:
+            reply = generate_reply(sender, last_msg)
         logger.info(f"💬 {sender} → {reply[:60]}")
         pending.append((sender, last_msg, reply))
 

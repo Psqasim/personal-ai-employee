@@ -13,6 +13,7 @@
 | **Silver** | ✅ Complete | AI priority analysis, task categorization, Gmail watcher |
 | **Gold** | ✅ Complete | **3/5 live integrations working!** Email ✅, Odoo ✅, WhatsApp ✅ |
 | **Platinum** | ✅ Complete | WhatsApp admin notifications, stale file recovery, cloud-ready |
+| **Hackathon+** | ✅ Complete | **Natural language commands, A2A orchestration, Odoo payments/contacts/bills** |
 
 ---
 
@@ -97,6 +98,29 @@ echo "# Review Proposal" > ~/my-vault/Inbox/task.md
 ```
 
 📖 **Bronze Setup Guide**: [docs/bronze/bronze-setup.md](docs/bronze/bronze-setup.md)
+
+### Natural Language Commands (Hackathon+)
+
+```bash
+# Send any command in plain English — Claude parses intent and creates a vault draft
+venv/bin/python3 scripts/natural_command.py "invoice Ali 5000 Rs web design"
+# → vault/Pending_Approval/Odoo/INVOICE_DRAFT_MANUAL_Ali_*.md
+
+venv/bin/python3 scripts/natural_command.py "send email to john@gmail.com about meeting"
+# → vault/Pending_Approval/Email/EMAIL_DRAFT_CMD_*.md
+
+venv/bin/python3 scripts/natural_command.py "add contact John Smith john@co.com +9230012345"
+# → vault/Pending_Approval/Odoo/CONTACT_DRAFT_*.md
+
+venv/bin/python3 scripts/natural_command.py "register payment for invoice INV/2026/00003"
+# → vault/Pending_Approval/Odoo/PAYMENT_DRAFT_*.md
+
+venv/bin/python3 scripts/natural_command.py "create purchase bill from Ali Traders 25000 Rs supplies"
+# → vault/Pending_Approval/Odoo/BILL_DRAFT_*.md
+
+# WhatsApp: send "!invoice Ali 5000" from your phone → appears in dashboard
+# Requires: CLAUDE_API_KEY set in .env, WHATSAPP_ADMIN_NAME set to your contact name
+```
 
 ### Silver (AI-Powered, Requires Claude API Key)
 
@@ -226,6 +250,41 @@ echo "# Urgent client proposal — due today" > vault/Inbox/task.md
 - ✅ **Environment Flag Control** - `ENABLE_WHATSAPP_NOTIFICATIONS=true/false` for silent skip
 - ✅ **Configurable Admin Number** - `WHATSAPP_NOTIFICATION_NUMBER` in `.env`
 
+### Hackathon+ (Natural Language Commands + A2A) 🤖
+- ✅ **Natural Language Command Router** (`cloud_agent/src/command_router.py`) — Claude-powered intent extractor supporting 8 action types; few-shot prompted with 11 examples; routes to correct vault draft automatically
+- ✅ **CLI Interface** (`scripts/natural_command.py`) — Terminal-based command entry: `python scripts/natural_command.py "invoice Ali 5000 Rs web design"` → creates vault draft instantly
+- ✅ **WhatsApp Command Interface** — Admin messages starting with `!` or `/` (or from `WHATSAPP_ADMIN_NAME`) are parsed as commands; bot replies with draft confirmation instead of auto-reply
+- ✅ **A2A Orchestration (Agent-to-Agent)** — `monitor_needs_action()` fully implemented: cloud agent writes to `vault/Needs_Action/`, local agent atomically claims tasks, routes by `action` frontmatter field, executes, and releases to `Done/` or `Failed/`
+- ✅ **Odoo: Create Contact** — `OdooPoster.create_contact(name, email, phone)` → `res.partner.create()` with WhatsApp confirmation
+- ✅ **Odoo: Register Payment** — `OdooPoster.register_payment(invoice_number)` → `account.payment.create()` + `action_post()` + reconcile attempt against invoice
+- ✅ **Odoo: Purchase Bills** — `OdooPoster.create_purchase_bill(vendor, amount)` → `account.move` with `move_type=in_invoice` (draft only, never auto-posts)
+- ✅ **New Vault Dataclasses** — `OdooContact`, `OdooPayment`, `OdooBill` in `agent_skills/vault_parser.py` with full frontmatter parsing
+
+#### Command Examples (WhatsApp or CLI)
+```
+"invoice Ali 5000 Rs web design"          → Odoo draft invoice
+"!email john@co.com about the proposal"   → Email draft
+"add contact John Smith john@co.com"      → Odoo contact draft
+"register payment for INV/2026/00003"     → Payment draft
+"purchase bill Ali Traders 25000 supplies"→ Vendor bill draft
+"post linkedin: We shipped AI invoicing!" → LinkedIn draft
+```
+
+#### How A2A Works
+```
+Oracle Cloud VM (cloud_agent)          Local PC / WSL2 (local_agent)
+─────────────────────────────          ─────────────────────────────
+WhatsApp command received              git pull every 30s
+  ↓ command_router.py                    ↓
+vault/Pending_Approval/ ──approve──→  vault/Approved/ ──auto──→ executor
+
+OR (direct A2A path):
+vault/Needs_Action/TASK.md  ─────────→ claim_task() → In_Progress/local/
+                                         ↓ detect action field
+                                         ↓ route to OdooPoster / email_sender
+                                       vault/Done/  ←── result
+```
+
 ---
 
 ## 🗺️ Roadmap
@@ -236,8 +295,9 @@ echo "# Urgent client proposal — due today" > vault/Inbox/task.md
 | **Silver** | ✅ **Complete** | AI priority analysis, task categorization, Gmail integration |
 | **Gold** | ✅ **Complete** | Multi-step execution, MCP automation, human approval workflow |
 | **Platinum** | ✅ **Complete** | WhatsApp admin notifications, stale recovery, proactive intelligence |
+| **Hackathon+** | ✅ **Complete** | Natural language commands, A2A orchestration, Odoo contacts/payments/bills |
 
-**Current Release**: Platinum Tier (Proactive Intelligence)
+**Current Release**: Hackathon+ (Natural Language Commands + A2A)
 
 ---
 

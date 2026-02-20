@@ -48,6 +48,12 @@ class ApprovalHandler:
         "Odoo": "odoo",
     }
 
+    # Odoo action values that use OdooPoster directly (not generic MCP path)
+    ODOO_DIRECT_ACTIONS = {
+        "create_draft_invoice", "create_draft_expense",
+        "create_contact", "register_payment", "create_purchase_bill",
+    }
+
     def __init__(self, vault_path: str, agent_id: str = "local"):
         self.vault_path = Path(vault_path)
         self.agent_id = agent_id
@@ -111,25 +117,61 @@ class ApprovalHandler:
         for file_path, draft_type in pending:
             logger.info(f"Processing {draft_type}: {file_path.name}")
             try:
-                # ── Odoo: call OdosPoster directly (bypasses MCP subprocess) ──────
+                # ── Odoo: call OdooPoster directly (bypasses MCP subprocess) ─────
                 if draft_type == "odoo":
                     from local_agent.src.executors.odoo_poster import OdooPoster
+                    from agent_skills.vault_parser import parse_frontmatter as _pf
                     poster = OdooPoster(str(self.vault_path))
-                    result = poster.post_from_file(str(file_path))
+
+                    # Detect action from frontmatter to route sub-types
+                    _fm, _ = _pf(str(file_path))
+                    _action = _fm.get("action", "create_draft_invoice")
+
+                    if _action in ("create_draft_invoice", "create_draft_expense"):
+                        result = poster.post_from_file(str(file_path))
+                        # OdooPoster handles file moves itself
+                    elif _action == "create_contact":
+                        result = poster.create_contact(
+                            name=_fm.get("name", _fm.get("customer", "")),
+                            email=_fm.get("email", ""),
+                            phone=_fm.get("phone", ""),
+                        )
+                        # Move file ourselves (post_from_file not called)
+                        _dest = (self.done_path if result.get("success") else self.failed_path) / "Odoo" / file_path.name
+                        _dest.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.move(str(file_path), str(_dest))
+                    elif _action == "register_payment":
+                        result = poster.register_payment(
+                            invoice_number=_fm.get("invoice_number", ""),
+                            amount=float(_fm.get("amount", 0) or 0),
+                        )
+                        _dest = (self.done_path if result.get("success") else self.failed_path) / "Odoo" / file_path.name
+                        _dest.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.move(str(file_path), str(_dest))
+                    elif _action == "create_purchase_bill":
+                        result = poster.create_purchase_bill(
+                            vendor=_fm.get("vendor", _fm.get("customer", "")),
+                            amount=float(_fm.get("amount", 0) or 0),
+                            description=_fm.get("description", ""),
+                            currency=_fm.get("currency", "PKR"),
+                        )
+                        _dest = (self.done_path if result.get("success") else self.failed_path) / "Odoo" / file_path.name
+                        _dest.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.move(str(file_path), str(_dest))
+                    else:
+                        # Fallback: generic invoice creation
+                        result = poster.post_from_file(str(file_path))
+
                     ok = result.get("success", False)
-                    # OdosPoster already handles file moves (Done/Failed) and WhatsApp
                     self._processed.add(str(file_path))
                     if ok:
                         success_count += 1
                         self._log_action(file_path, draft_type, "success")
-                        logger.info(
-                            f"✅ odoo invoice created: "
-                            f"{result.get('invoice_number')} (ID {result.get('odoo_record_id')})"
-                        )
+                        logger.info(f"✅ odoo {_action} completed: {file_path.name}")
                     else:
                         err = result.get("error", "Unknown error")
                         self._log_action(file_path, draft_type, "failed", err)
-                        logger.warning(f"⚠️  odoo processing failed: {file_path.name} — {err}")
+                        logger.warning(f"⚠️  odoo {_action} failed: {file_path.name} — {err}")
                     continue  # skip generic process_approval() below
 
                 # ── Email / WhatsApp / LinkedIn: existing MCP path ────────────────

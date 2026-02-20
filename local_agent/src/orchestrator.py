@@ -73,26 +73,130 @@ class LocalOrchestrator:
 
     def monitor_needs_action(self):
         """
-        Monitor vault/Needs_Action/ for tasks
-        Claim and process tasks
+        A2A: Monitor vault/Needs_Action/ for tasks written by the cloud agent.
+        Claim each task atomically, detect its type from the `action` frontmatter
+        field, route to the appropriate executor, then release to Done/ or Failed/.
         """
         logger.debug("Monitoring /Needs_Action/...")
 
-        # Scan for tasks
         tasks = self.claim_mgr.scan_needs_action()
+        if not tasks:
+            return
 
-        for task in tasks:
-            # Try to claim
-            if self.claim_mgr.claim_task(task):
-                logger.info(f"Claimed task: {task.name}")
+        from agent_skills.vault_parser import parse_frontmatter
 
-                # TODO: Process claimed task
-                # 1. Read task file
-                # 2. Determine task type
-                # 3. Execute appropriate action
-                # 4. Release to /Done/
+        for task_file in tasks:
+            if not self.claim_mgr.claim_task(task_file):
+                continue  # another agent claimed it first
 
-                pass
+            # task was moved to In_Progress/local/
+            claimed_path = (
+                Path(self.vault_path) / "In_Progress" / self.agent_id / task_file.name
+            )
+
+            try:
+                frontmatter, body = parse_frontmatter(str(claimed_path))
+                action = frontmatter.get("action", "")
+                logger.info(f"🔧 A2A task: {task_file.name} | action={action}")
+
+                success, result_info = self._execute_needs_action_task(
+                    claimed_path, action, frontmatter, body
+                )
+
+                target = "Done" if success else "Failed"
+                self.claim_mgr.release_task(claimed_path, target)
+                logger.info(f"{'✅' if success else '❌'} {task_file.name} → {target}/ | {result_info}")
+
+            except Exception as e:
+                logger.error(f"❌ Error processing {task_file.name}: {e}")
+                try:
+                    self.claim_mgr.release_task(claimed_path, "Failed")
+                except Exception:
+                    pass
+
+    def _execute_needs_action_task(
+        self,
+        task_path: "Path",
+        action: str,
+        frontmatter: dict,
+        body: str,
+    ) -> tuple:
+        """
+        Route a claimed Needs_Action task to the correct executor.
+
+        Returns: (success: bool, info: str)
+        """
+        from pathlib import Path as _Path
+
+        # ── Odoo: Invoice / Expense ──────────────────────────────────────────
+        if action in ("create_draft_invoice", "create_draft_expense"):
+            from local_agent.src.executors.odoo_poster import OdooPoster
+            poster = OdooPoster(self.vault_path)
+            result = poster.post_from_file(str(task_path))
+            ok = result.get("success", False)
+            info = (
+                f"Invoice {result.get('invoice_number')} (ID {result.get('odoo_record_id')})"
+                if ok else result.get("error", "unknown")
+            )
+            return ok, info
+
+        # ── Odoo: Contact ────────────────────────────────────────────────────
+        elif action == "create_contact":
+            from local_agent.src.executors.odoo_poster import OdooPoster
+            poster = OdooPoster(self.vault_path)
+            result = poster.create_contact(
+                name=frontmatter.get("name", frontmatter.get("customer", "")),
+                email=frontmatter.get("email", ""),
+                phone=frontmatter.get("phone", ""),
+            )
+            ok = result.get("success", False)
+            return ok, result.get("partner_id", result.get("error", ""))
+
+        # ── Odoo: Payment ────────────────────────────────────────────────────
+        elif action == "register_payment":
+            from local_agent.src.executors.odoo_poster import OdooPoster
+            poster = OdooPoster(self.vault_path)
+            result = poster.register_payment(
+                invoice_number=frontmatter.get("invoice_number", ""),
+                amount=frontmatter.get("amount", 0),
+            )
+            ok = result.get("success", False)
+            return ok, result.get("payment_id", result.get("error", ""))
+
+        # ── Odoo: Purchase Bill ──────────────────────────────────────────────
+        elif action == "create_purchase_bill":
+            from local_agent.src.executors.odoo_poster import OdooPoster
+            poster = OdooPoster(self.vault_path)
+            result = poster.create_purchase_bill(
+                vendor=frontmatter.get("vendor", frontmatter.get("customer", "")),
+                amount=float(frontmatter.get("amount", 0)),
+                description=frontmatter.get("description", ""),
+                currency=frontmatter.get("currency", "PKR"),
+            )
+            ok = result.get("success", False)
+            return ok, result.get("bill_number", result.get("error", ""))
+
+        # ── Email ────────────────────────────────────────────────────────────
+        elif action == "send_email":
+            from agent_skills.approval_watcher import process_approval
+            ok = process_approval(str(task_path), "email")
+            return ok, "sent" if ok else "failed"
+
+        # ── WhatsApp ─────────────────────────────────────────────────────────
+        elif action == "send_message":
+            from agent_skills.approval_watcher import process_approval
+            ok = process_approval(str(task_path), "whatsapp")
+            return ok, "sent" if ok else "failed"
+
+        # ── LinkedIn ─────────────────────────────────────────────────────────
+        elif action == "create_post":
+            from agent_skills.approval_watcher import process_approval
+            ok = process_approval(str(task_path), "linkedin")
+            return ok, "posted" if ok else "failed"
+
+        else:
+            logger.warning(f"Unknown action '{action}' in {task_path.name} — skipping")
+            return False, f"unknown action: {action}"
 
     def check_ceo_briefing(self):
         """

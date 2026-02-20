@@ -199,6 +199,293 @@ class OdooPoster:
             "email_sent": bool(draft.customer_email),
         }
 
+    # ── New Odoo operations ───────────────────────────────────────────────────
+
+    def create_contact(self, name: str, email: str = "", phone: str = "") -> Dict[str, Any]:
+        """
+        Create a new res.partner (customer/vendor contact) in Odoo.
+
+        Args:
+            name:  Contact full name (required)
+            email: Email address (optional)
+            phone: Phone number (optional)
+
+        Returns:
+            {"success": bool, "partner_id": int|None, "error": str|None}
+        """
+        if not name:
+            return {"success": False, "partner_id": None, "error": "name is required"}
+
+        if os.getenv("ENABLE_ODOO", "false").lower() != "true":
+            return {"success": False, "partner_id": None, "error": "Odoo disabled"}
+
+        try:
+            import xmlrpc.client
+            url      = os.getenv("ODOO_URL", "").rstrip("/")
+            db       = os.getenv("ODOO_DB", "")
+            user     = os.getenv("ODOO_USER", "")
+            password = os.getenv("ODOO_API_KEY") or os.getenv("ODOO_PASSWORD", "")
+
+            common  = xmlrpc.client.ServerProxy(f"{url}/xmlrpc/2/common", allow_none=True)
+            uid     = common.authenticate(db, user, password, {})
+            if not uid:
+                raise ValueError("Odoo auth failed")
+
+            models = xmlrpc.client.ServerProxy(f"{url}/xmlrpc/2/object", allow_none=True)
+
+            def execute(model, method, args, kwargs=None):
+                return models.execute_kw(db, uid, password, model, method, args, kwargs or {})
+
+            vals = {"name": name}
+            if email:
+                vals["email"] = email
+            if phone:
+                vals["phone"] = phone
+
+            raw = execute("res.partner", "create", [vals])
+            partner_id = raw[0] if isinstance(raw, list) else raw
+
+            logger.info(f"✅ Odoo contact created: {name} (ID {partner_id})")
+            self._log(f"CONTACT_CREATED name={name} id={partner_id}")
+
+            self._notify_whatsapp(
+                f"👤 Contact created in Odoo: {name} (ID {partner_id})"
+            )
+
+            return {"success": True, "partner_id": partner_id, "error": None}
+
+        except Exception as e:
+            logger.error(f"create_contact failed: {e}")
+            self._log(f"CONTACT_FAILED name={name} error={e}")
+            return {"success": False, "partner_id": None, "error": str(e)}
+
+    def register_payment(self, invoice_number: str, amount: float = 0) -> Dict[str, Any]:
+        """
+        Register a payment against an existing Odoo invoice.
+
+        Finds the invoice by name (e.g. "INV/2026/00003"), creates a payment
+        wizard record and validates it.
+
+        Args:
+            invoice_number: Odoo invoice name/reference (e.g. "INV/2026/00003")
+            amount:         Payment amount (0 = pay full outstanding amount)
+
+        Returns:
+            {"success": bool, "payment_id": int|None, "error": str|None}
+        """
+        if not invoice_number:
+            return {"success": False, "payment_id": None, "error": "invoice_number is required"}
+
+        if os.getenv("ENABLE_ODOO", "false").lower() != "true":
+            return {"success": False, "payment_id": None, "error": "Odoo disabled"}
+
+        try:
+            import xmlrpc.client
+            url      = os.getenv("ODOO_URL", "").rstrip("/")
+            db       = os.getenv("ODOO_DB", "")
+            user     = os.getenv("ODOO_USER", "")
+            password = os.getenv("ODOO_API_KEY") or os.getenv("ODOO_PASSWORD", "")
+
+            common  = xmlrpc.client.ServerProxy(f"{url}/xmlrpc/2/common", allow_none=True)
+            uid     = common.authenticate(db, user, password, {})
+            if not uid:
+                raise ValueError("Odoo auth failed")
+
+            models = xmlrpc.client.ServerProxy(f"{url}/xmlrpc/2/object", allow_none=True)
+
+            def execute(model, method, args, kwargs=None):
+                return models.execute_kw(db, uid, password, model, method, args, kwargs or {})
+
+            # Find the invoice
+            inv_ids = execute(
+                "account.move", "search",
+                [[["name", "=", invoice_number], ["move_type", "in", ["out_invoice", "in_invoice"]]]],
+                {"limit": 1}
+            )
+            if not inv_ids:
+                raise ValueError(f"Invoice not found: {invoice_number}")
+
+            invoice_id = inv_ids[0]
+
+            # Read outstanding amount if no amount specified
+            if not amount:
+                inv_data = execute(
+                    "account.move", "read", [[invoice_id]],
+                    {"fields": ["amount_residual", "currency_id"]}
+                )[0]
+                amount = inv_data["amount_residual"]
+
+            # Create payment using account.payment directly (simpler than wizard)
+            inv_data = execute(
+                "account.move", "read", [[invoice_id]],
+                {"fields": ["partner_id", "currency_id", "move_type", "journal_id"]}
+            )[0]
+
+            payment_type = "inbound" if inv_data["move_type"] == "out_invoice" else "outbound"
+
+            # Find a suitable journal (bank or cash)
+            journal_ids = execute(
+                "account.journal", "search",
+                [[["type", "in", ["bank", "cash"]]]],
+                {"limit": 1}
+            )
+            journal_id = journal_ids[0] if journal_ids else inv_data.get("journal_id", [None])[0]
+
+            payment_vals = {
+                "payment_type": payment_type,
+                "partner_id": inv_data["partner_id"][0] if isinstance(inv_data["partner_id"], list) else inv_data["partner_id"],
+                "amount": float(amount),
+                "journal_id": journal_id,
+                "date": datetime.now().strftime("%Y-%m-%d"),
+                "ref": f"Payment for {invoice_number}",
+            }
+
+            raw = execute("account.payment", "create", [payment_vals])
+            payment_id = raw[0] if isinstance(raw, list) else raw
+
+            # Post the payment (validates it)
+            execute("account.payment", "action_post", [[payment_id]])
+
+            # Reconcile with the invoice
+            payment_data = execute(
+                "account.payment", "read", [[payment_id]],
+                {"fields": ["move_id"]}
+            )[0]
+            move_id = payment_data["move_id"][0] if isinstance(payment_data.get("move_id"), list) else None
+
+            if move_id:
+                # Get payment lines and invoice lines for reconciliation
+                try:
+                    pay_lines = execute(
+                        "account.move.line", "search",
+                        [[["move_id", "=", move_id], ["account_id.reconcile", "=", True]]]
+                    )
+                    inv_lines = execute(
+                        "account.move.line", "search",
+                        [[["move_id", "=", invoice_id], ["account_id.reconcile", "=", True], ["reconciled", "=", False]]]
+                    )
+                    if pay_lines and inv_lines:
+                        all_lines = pay_lines + inv_lines
+                        execute("account.move.line", "reconcile", [all_lines])
+                except Exception as rec_err:
+                    logger.warning(f"Reconciliation attempt failed (payment still created): {rec_err}")
+
+            logger.info(f"✅ Payment registered: {invoice_number} → payment ID {payment_id}")
+            self._log(f"PAYMENT_REGISTERED invoice={invoice_number} amount={amount} payment_id={payment_id}")
+
+            self._notify_whatsapp(
+                f"💳 Payment registered: {invoice_number} | Amount: {amount:.2f}"
+            )
+
+            return {"success": True, "payment_id": payment_id, "error": None}
+
+        except Exception as e:
+            logger.error(f"register_payment failed: {e}")
+            self._log(f"PAYMENT_FAILED invoice={invoice_number} error={e}")
+            return {"success": False, "payment_id": None, "error": str(e)}
+
+    def create_purchase_bill(
+        self,
+        vendor: str,
+        amount: float,
+        description: str = "",
+        currency: str = "PKR",
+    ) -> Dict[str, Any]:
+        """
+        Create a vendor bill (account.move with move_type=in_invoice) in Odoo.
+
+        Args:
+            vendor:      Vendor name (will be looked up or created in res.partner)
+            amount:      Bill amount
+            description: Line description
+            currency:    Currency code (e.g. PKR, USD)
+
+        Returns:
+            {"success": bool, "bill_number": str|None, "odoo_record_id": int|None, "error": str|None}
+        """
+        if not vendor:
+            return {"success": False, "bill_number": None, "odoo_record_id": None, "error": "vendor is required"}
+
+        if os.getenv("ENABLE_ODOO", "false").lower() != "true":
+            return {"success": False, "bill_number": None, "odoo_record_id": None, "error": "Odoo disabled"}
+
+        try:
+            import xmlrpc.client
+            url      = os.getenv("ODOO_URL", "").rstrip("/")
+            db       = os.getenv("ODOO_DB", "")
+            user     = os.getenv("ODOO_USER", "")
+            password = os.getenv("ODOO_API_KEY") or os.getenv("ODOO_PASSWORD", "")
+
+            common  = xmlrpc.client.ServerProxy(f"{url}/xmlrpc/2/common", allow_none=True)
+            uid     = common.authenticate(db, user, password, {})
+            if not uid:
+                raise ValueError("Odoo auth failed")
+
+            models = xmlrpc.client.ServerProxy(f"{url}/xmlrpc/2/object", allow_none=True)
+
+            def execute(model, method, args, kwargs=None):
+                return models.execute_kw(db, uid, password, model, method, args, kwargs or {})
+
+            # Find or create vendor partner
+            partner_ids = execute("res.partner", "search", [[["name", "=", vendor]]], {"limit": 1})
+            if partner_ids:
+                partner_id = partner_ids[0]
+            else:
+                raw = execute("res.partner", "create", [{"name": vendor, "supplier_rank": 1}])
+                partner_id = raw[0] if isinstance(raw, list) else raw
+                logger.info(f"Created vendor partner: {vendor} (ID {partner_id})")
+
+            bill_date = datetime.now().strftime("%Y-%m-%d")
+
+            bill_vals = {
+                "move_type": "in_invoice",   # vendor bill
+                "partner_id": int(partner_id),
+                "invoice_date": bill_date,
+                "ref": description or f"Purchase from {vendor}",
+                "state": "draft",            # ALWAYS draft — never auto-post
+                "invoice_line_ids": [(0, 0, {
+                    "name": description or f"Purchase from {vendor}",
+                    "quantity": 1.0,
+                    "price_unit": float(amount),
+                })]
+            }
+
+            raw_id = execute("account.move", "create", [bill_vals])
+            record_id = raw_id[0] if isinstance(raw_id, list) else raw_id
+
+            bill = execute(
+                "account.move", "read", [[int(record_id)]],
+                {"fields": ["name", "state"]}
+            )[0]
+            bill_number = bill.get("name") or f"BILL/{record_id}"
+
+            logger.info(f"✅ Purchase bill created: {bill_number} (ID {record_id}) | {vendor} | {currency} {amount:.2f}")
+            self._log(f"BILL_CREATED bill={bill_number} vendor={vendor} amount={currency} {amount:.2f} id={record_id}")
+
+            self._notify_whatsapp(
+                f"🧾 Purchase bill created: {bill_number} | {vendor} | {currency} {amount:,.2f}"
+            )
+
+            return {
+                "success": True,
+                "bill_number": bill_number,
+                "odoo_record_id": record_id,
+                "error": None,
+            }
+
+        except Exception as e:
+            logger.error(f"create_purchase_bill failed: {e}")
+            self._log(f"BILL_FAILED vendor={vendor} error={e}")
+            return {"success": False, "bill_number": None, "odoo_record_id": None, "error": str(e)}
+
+    def _notify_whatsapp(self, message: str):
+        """Send a generic WhatsApp notification (non-fatal if it fails)."""
+        try:
+            from cloud_agent.src.notifications.whatsapp_notifier import _send_in_thread
+            _send_in_thread(message, "odoo_operation")
+        except Exception as e:
+            logger.debug(f"WhatsApp notify skipped: {e}")
+
     def _send_whatsapp_confirmation(self, draft: OdooDraft, result: Dict[str, Any]):
         """Send WhatsApp notification on successful Odoo creation."""
         try:

@@ -89,6 +89,48 @@ class OdooDraft:
 
 
 @dataclass
+class OdooContact:
+    """Parsed OdooContact entity from vault/Pending_Approval/Odoo/CONTACT_DRAFT_*.md"""
+    draft_id: str
+    name: str
+    email: str
+    phone: str
+    action: str = "create_contact"
+    status: str = "pending_approval"
+    created: Optional[datetime] = None
+    file_path: str = ""
+    mcp_server: str = "odoo-mcp"
+
+
+@dataclass
+class OdooPayment:
+    """Parsed OdooPayment entity from vault/Pending_Approval/Odoo/PAYMENT_DRAFT_*.md"""
+    draft_id: str
+    invoice_number: str
+    amount: float
+    action: str = "register_payment"
+    status: str = "pending_approval"
+    created: Optional[datetime] = None
+    file_path: str = ""
+    mcp_server: str = "odoo-mcp"
+
+
+@dataclass
+class OdooBill:
+    """Parsed OdooBill entity from vault/Pending_Approval/Odoo/BILL_DRAFT_*.md"""
+    draft_id: str
+    vendor: str
+    amount: float
+    currency: str
+    description: str
+    action: str = "create_purchase_bill"
+    status: str = "pending_approval"
+    created: Optional[datetime] = None
+    file_path: str = ""
+    mcp_server: str = "odoo-mcp"
+
+
+@dataclass
 class PlanStep:
     """Parsed PlanStep from Plan YAML"""
     step_num: int
@@ -291,8 +333,75 @@ def parse_draft_file(file_path: str, draft_type: str = "email") -> Any:
             mcp_server=frontmatter.get("mcp_server", "odoo-mcp"),
         )
 
+    elif draft_type == "contact":
+        def _dt(v):
+            if v is None or v == "null":
+                return None
+            if isinstance(v, datetime):
+                return v
+            return datetime.fromisoformat(str(v).replace('Z', '+00:00'))
+        return OdooContact(
+            draft_id=frontmatter.get("draft_id", Path(file_path).stem),
+            name=frontmatter.get("name", frontmatter.get("customer", "")),
+            email=frontmatter.get("email", ""),
+            phone=frontmatter.get("phone", ""),
+            action=frontmatter.get("action", "create_contact"),
+            status=frontmatter.get("status", "pending_approval"),
+            created=_dt(frontmatter.get("created")),
+            file_path=file_path,
+            mcp_server=frontmatter.get("mcp_server", "odoo-mcp"),
+        )
+
+    elif draft_type == "payment":
+        def _dt(v):
+            if v is None or v == "null":
+                return None
+            if isinstance(v, datetime):
+                return v
+            return datetime.fromisoformat(str(v).replace('Z', '+00:00'))
+        amount_raw = frontmatter.get("amount", 0)
+        try:
+            amount = float(str(amount_raw).replace(",", "").strip())
+        except (ValueError, TypeError):
+            amount = 0.0
+        return OdooPayment(
+            draft_id=frontmatter.get("draft_id", Path(file_path).stem),
+            invoice_number=frontmatter.get("invoice_number", ""),
+            amount=amount,
+            action=frontmatter.get("action", "register_payment"),
+            status=frontmatter.get("status", "pending_approval"),
+            created=_dt(frontmatter.get("created")),
+            file_path=file_path,
+            mcp_server=frontmatter.get("mcp_server", "odoo-mcp"),
+        )
+
+    elif draft_type == "bill":
+        def _dt(v):
+            if v is None or v == "null":
+                return None
+            if isinstance(v, datetime):
+                return v
+            return datetime.fromisoformat(str(v).replace('Z', '+00:00'))
+        amount_raw = frontmatter.get("amount", 0)
+        try:
+            amount = float(str(amount_raw).replace(",", "").strip())
+        except (ValueError, TypeError):
+            amount = 0.0
+        return OdooBill(
+            draft_id=frontmatter.get("draft_id", Path(file_path).stem),
+            vendor=frontmatter.get("vendor", frontmatter.get("customer", "")),
+            amount=amount,
+            currency=frontmatter.get("currency", "PKR"),
+            description=frontmatter.get("description", body.strip()[:200]),
+            action=frontmatter.get("action", "create_purchase_bill"),
+            status=frontmatter.get("status", "pending_approval"),
+            created=_dt(frontmatter.get("created")),
+            file_path=file_path,
+            mcp_server=frontmatter.get("mcp_server", "odoo-mcp"),
+        )
+
     else:
-        raise ValueError(f"Invalid draft_type: {draft_type}. Must be 'email', 'whatsapp', 'linkedin', or 'odoo'")
+        raise ValueError(f"Invalid draft_type: {draft_type}. Must be 'email', 'whatsapp', 'linkedin', 'odoo', 'contact', 'payment', or 'bill'")
 
 
 def parse_plan_file(file_path: str) -> Plan:
@@ -400,6 +509,12 @@ def detect_draft_type(file_path: str) -> Optional[str]:
         return "whatsapp"
     elif "/linkedin/" in path_str or "linkedin_post" in path_str:
         return "linkedin"
+    elif "contact_draft" in path_str:
+        return "contact"
+    elif "payment_draft" in path_str:
+        return "payment"
+    elif "bill_draft" in path_str:
+        return "bill"
     elif "/odoo/" in path_str or "invoice_draft" in path_str or "odoo_draft" in path_str:
         return "odoo"
 
