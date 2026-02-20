@@ -262,6 +262,32 @@ def _make_browser(p):
     )
 
 
+def _dismiss_dialogs(page) -> None:
+    """Dismiss any WhatsApp popup/modal dialogs blocking the UI (max 3 attempts).
+    Covers: 'New features', notification prompts, update banners, etc.
+    """
+    for _ in range(3):
+        try:
+            dialog = page.locator('[role="dialog"]')
+            if dialog.count() == 0:
+                break
+            # Try close button inside dialog first
+            close_btn = dialog.locator(
+                'button[aria-label="Close"], '
+                'button[aria-label="OK"], '
+                'button[aria-label="Got it"], '
+                'button[data-testid="popup-controls-ok"], '
+                'span[data-icon="x"]'
+            )
+            if close_btn.count() > 0:
+                close_btn.first.click(timeout=3000)
+            else:
+                page.keyboard.press("Escape")
+            page.wait_for_timeout(800)
+        except Exception:
+            break
+
+
 def _wait_for_whatsapp(page) -> bool:
     """Navigate to WhatsApp Web and wait for chat list. Returns False if QR shown."""
     page.goto("https://web.whatsapp.com", wait_until="domcontentloaded", timeout=40000)
@@ -272,6 +298,7 @@ def _wait_for_whatsapp(page) -> bool:
         logger.error("QR shown — re-run setup_whatsapp_session.py")
         return False
     page.wait_for_timeout(2000)
+    _dismiss_dialogs(page)  # clear any popup before interacting
     return True
 
 
@@ -418,6 +445,7 @@ def run_cycle():
                     row_map: dict[str, int] = {}
                     for i, row in enumerate(rows[:CHATS_TO_CHECK]):
                         try:
+                            _dismiss_dialogs(page)  # clear popup before each click
                             row.click()
                             page.wait_for_timeout(2500)  # was 1500 — Oracle Cloud needs more
                             name = _read_sender(page, i)
@@ -430,6 +458,7 @@ def run_cycle():
                         try:
                             idx = row_map.get(sender)
                             if idx is not None:
+                                _dismiss_dialogs(page)  # clear popup before send click
                                 rows[idx].click()
                                 page.wait_for_timeout(2500)  # was 1500
 
