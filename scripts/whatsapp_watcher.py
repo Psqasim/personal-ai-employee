@@ -48,7 +48,7 @@ ADMIN_NUMBER   = os.getenv("WHATSAPP_NOTIFICATION_NUMBER", "")
 ENABLE         = os.getenv("ENABLE_WHATSAPP_WATCHER", "false").lower() == "true"
 SESSION_PATH   = os.getenv("WHATSAPP_SESSION_PATH", "/home/ps_qasim/.whatsapp_session_dir")
 CLAUDE_MODEL   = "claude-haiku-4-5-20251001"
-CHATS_TO_CHECK = 5
+CHATS_TO_CHECK = int(os.getenv("CHATS_TO_CHECK", "10"))  # read from env, default 10
 # Oracle Cloud = headless=True (real Linux), local WSL2 = headless=False
 HEADLESS       = os.getenv("PLAYWRIGHT_HEADLESS", "false").lower() == "true"
 # WSL2 needs --no-zygote (SIGTRAP fix) regardless of headless mode.
@@ -396,7 +396,8 @@ def run_cycle():
     # On Oracle Free Tier (slow I/O), opening Chrome too quickly after Phase-1
     # closes causes the profile dir to be in a partial-write state → Phase-3
     # Chrome never fully initialises → WhatsApp Web never loads → 60s timeout.
-    time.sleep(10)
+    # 20s (was 10s) — Oracle Cloud ARM disk I/O is slower than expected.
+    time.sleep(20)
 
     # ── Phase 3: Send (locked) ────────────────────────────────────────────────
     try:
@@ -418,7 +419,7 @@ def run_cycle():
                     for i, row in enumerate(rows[:CHATS_TO_CHECK]):
                         try:
                             row.click()
-                            page.wait_for_timeout(1500)
+                            page.wait_for_timeout(2500)  # was 1500 — Oracle Cloud needs more
                             name = _read_sender(page, i)
                             row_map[name] = i
                         except Exception:
@@ -430,9 +431,9 @@ def run_cycle():
                             idx = row_map.get(sender)
                             if idx is not None:
                                 rows[idx].click()
-                                page.wait_for_timeout(1500)
+                                page.wait_for_timeout(2500)  # was 1500
 
-                            msg_box = page.wait_for_selector(MSG_INPUT, timeout=8000)
+                            msg_box = page.wait_for_selector(MSG_INPUT, timeout=15000)  # was 8000
                             msg_box.click()
                             msg_box.fill(reply)
                             page.wait_for_timeout(500)

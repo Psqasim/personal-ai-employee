@@ -56,6 +56,14 @@ class CloudOrchestrator:
         # Track last morning summary sent (avoid duplicates)
         self._morning_summary_sent_date: str = ""
 
+        # Pending approval alert cooldown — only send once per hour (not every 5-min cycle)
+        self._last_pending_alert_time: float = 0.0
+        self._pending_alert_interval: float = 3600.0  # 1 hour
+
+        # Gmail auth failure cooldown — disable polling after repeated auth errors
+        self._gmail_auth_failures: int = 0
+        self._gmail_disabled_until: float = 0.0  # epoch; 0 = not disabled
+
         # Gmail watcher (polls on each orchestration cycle)
         from cloud_agent.src.watchers.gmail_watcher import CloudGmailWatcher
         self.gmail_watcher = CloudGmailWatcher(self.vault_path)
@@ -221,8 +229,14 @@ class CloudOrchestrator:
                     oldest_item = f.name
 
         if pending_count >= 5:
-            logger.info(f"⏳ {pending_count} items pending approval — sending WhatsApp alert")
-            notify_pending_approvals(count=pending_count, oldest_item=oldest_item)
+            now = time.time()
+            if now - self._last_pending_alert_time >= self._pending_alert_interval:
+                logger.info(f"⏳ {pending_count} items pending approval — sending WhatsApp alert")
+                notify_pending_approvals(count=pending_count, oldest_item=oldest_item)
+                self._last_pending_alert_time = now
+            else:
+                mins_left = int((self._pending_alert_interval - (now - self._last_pending_alert_time)) / 60)
+                logger.debug(f"⏳ {pending_count} pending — alert suppressed (next in ~{mins_left}m)")
 
         # Morning summary at 8 AM UTC (send once per day)
         now_utc = datetime.now(timezone.utc)
@@ -259,15 +273,40 @@ class CloudOrchestrator:
     def poll_gmail(self):
         """
         Poll Gmail for new emails and write to vault/Inbox/.
-        Called every orchestration cycle (default: 5 min for orchestrator,
-        but gmail_watcher.py can also run as a separate PM2 process at 60s).
+        Auto-disables for 6 hours after 3 consecutive auth failures to avoid
+        spamming logs with invalid_grant / SSL errors.
         """
+        now = time.time()
+
+        # Check if Gmail is temporarily disabled due to repeated auth errors
+        if self._gmail_disabled_until > now:
+            mins_left = int((self._gmail_disabled_until - now) / 60)
+            logger.debug(f"Gmail polling disabled (auth errors) — resumes in ~{mins_left}m")
+            return
+
         try:
             count = self.gmail_watcher.poll_once()
             if count:
                 logger.info(f"📬 Gmail poll: {count} new email(s) added to inbox")
+            # Reset failure counter on success
+            self._gmail_auth_failures = 0
         except Exception as e:
-            logger.error(f"Gmail poll error: {e}")
+            err_str = str(e).lower()
+            # Detect auth errors: invalid_grant, token expired, SSL OAuth failures
+            if any(kw in err_str for kw in ("invalid_grant", "token has been expired", "revoked", "ssleoferror")):
+                self._gmail_auth_failures += 1
+                if self._gmail_auth_failures >= 3:
+                    disable_hours = 6
+                    self._gmail_disabled_until = now + (disable_hours * 3600)
+                    logger.warning(
+                        f"Gmail auth error #{self._gmail_auth_failures} — "
+                        f"disabling Gmail polling for {disable_hours}h. "
+                        f"Re-run scripts/setup_gmail_auth.py to fix."
+                    )
+                else:
+                    logger.warning(f"Gmail auth error #{self._gmail_auth_failures}/3: {e}")
+            else:
+                logger.error(f"Gmail poll error: {e}")
 
     def orchestration_cycle(self):
         """
