@@ -35,20 +35,15 @@ from agent_skills.vault_parser import parse_frontmatter
 # ─── Date helpers ─────────────────────────────────────────────────────────────
 
 def calculate_week_dates() -> Dict[str, datetime]:
-    """Calculate previous week's date range (Monday–Sunday)."""
-    today = datetime.now()
-    days_since_sunday = (today.weekday() + 1) % 7
-    if days_since_sunday == 0:
-        last_sunday = today - timedelta(days=7)
-    else:
-        last_sunday = today - timedelta(days=days_since_sunday)
-
-    week_start = last_sunday - timedelta(days=6)
-    briefing_date = last_sunday + timedelta(days=1)
+    """Calculate rolling 7-day window ending now (inclusive of today's work)."""
+    now = datetime.now()
+    week_end = now
+    week_start = now - timedelta(days=7)
+    briefing_date = now + timedelta(days=1)
 
     return {
         "week_start": week_start.replace(hour=0, minute=0, second=0, microsecond=0),
-        "week_end": last_sunday.replace(hour=23, minute=59, second=59, microsecond=0),
+        "week_end": week_end,
         "briefing_date": briefing_date.replace(hour=0, minute=0, second=0, microsecond=0),
     }
 
@@ -204,7 +199,10 @@ def get_suggestions(vault_path: str) -> List[str]:
 def send_whatsapp_briefing(counts: Dict[str, int], api_cost: float, date_str: str) -> None:
     """Send CEO briefing summary via WhatsApp."""
     try:
-        from cloud_agent.src.notifications.whatsapp_notifier import send_whatsapp_message
+        from cloud_agent.src.notifications.whatsapp_notifier import _send_in_thread, _is_enabled
+        if not _is_enabled():
+            print("[ceo_briefing] WhatsApp notifications disabled (ENABLE_WHATSAPP_NOTIFICATIONS != true)")
+            return
         msg = (
             f"📊 *CEO Briefing — Week of {date_str}*\n\n"
             f"📧 Emails processed: {counts.get('Email', 0)}\n"
@@ -215,7 +213,7 @@ def send_whatsapp_briefing(counts: Dict[str, int], api_cost: float, date_str: st
             f"💰 API cost: ${api_cost:.4f}\n\n"
             f"Full report: vault/Briefings/latest"
         )
-        send_whatsapp_message(msg)
+        _send_in_thread(msg, "ceo_briefing")
         print("[ceo_briefing] WhatsApp notification sent")
     except Exception as e:
         print(f"[ceo_briefing] WhatsApp notification failed (non-fatal): {e}")
