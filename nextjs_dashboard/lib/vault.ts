@@ -373,7 +373,8 @@ function readItemsFromDirectory(dirPath: string, relativePath: string): Approval
             timestamp: data.timestamp || data.created_at || stat.mtime.toISOString(),
             filePath: path.relative(VAULT_PATH, fullPath),
             metadata: data,
-            content: bodyContent,
+            // Truncate content to avoid huge API responses (some log files are 1MB+)
+            content: bodyContent.substring(0, 3000) + (bodyContent.length > 3000 ? "\n\n...[truncated]" : ""),
           });
         } catch (error) {
           console.error(`Error parsing file ${entry}:`, error instanceof Error ? error.message : error);

@@ -50,6 +50,12 @@ def process_approval(file_path: str, approval_type: str) -> bool:
             # Check if already processed (idempotency)
             if _is_processed(file_path):
                 print(f"[approval_watcher] Already processed: {file_path}")
+                # Move stale file to Done so it stops looping
+                if Path(file_path).exists():
+                    try:
+                        _move_to_done(file_path, status="sent")
+                    except Exception as _me:
+                        print(f"[approval_watcher] Could not move stale file to Done: {_me}")
                 return True
 
             # Parse draft file
@@ -117,9 +123,10 @@ def _invoke_mcp_for_draft(draft: Any, draft_type: str) -> Dict[str, Any]:
             return {"success": True, "result": result, "error": None}
 
         elif draft_type == "whatsapp":
-            # Invoke whatsapp-mcp with a short timeout in a thread to avoid blocking
+            # Invoke whatsapp-mcp with extended timeout — browser automation needs 120-180s
+            # (browser launch ~10s + WhatsApp Web load ~30s + login check ~60s + send ~10s)
             import threading
-            whatsapp_client = get_mcp_client(timeout=60)  # 60s max, not 180s
+            whatsapp_client = get_mcp_client(timeout=180)  # 3min for full browser flow
             result_holder = {}
 
             def _send():
@@ -140,10 +147,10 @@ def _invoke_mcp_for_draft(draft: Any, draft_type: str) -> Dict[str, Any]:
 
             t = threading.Thread(target=_send, daemon=True)
             t.start()
-            t.join(timeout=65)  # 65s hard wall-clock limit
+            t.join(timeout=185)  # 185s hard wall-clock limit (5s slack over MCP timeout)
 
             if t.is_alive():
-                return {"success": False, "result": None, "error": "WhatsApp MCP timeout (65s) — session may be expired"}
+                return {"success": False, "result": None, "error": "WhatsApp MCP timeout (185s) — session may be expired or browser stuck"}
             if "error" in result_holder:
                 return {"success": False, "result": None, "error": result_holder["error"]}
             return {"success": True, "result": result_holder.get("result", {}), "error": None}
