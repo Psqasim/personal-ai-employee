@@ -121,8 +121,9 @@ mcp_server: odoo-mcp
     const folder = folderMap[type];
     const fileName = `MANUAL_${type.toUpperCase()}_${userName}_${timestamp}.md`;
 
-    // Create file path
-    const categoryPath = path.join(vaultPath, "Pending_Approval", folder);
+    // WhatsApp messages skip approval and go directly to Approved/ for auto-send
+    const baseDir = type === "whatsapp" ? "Approved" : "Pending_Approval";
+    const categoryPath = path.join(vaultPath, baseDir, folder);
     const filePath = path.join(categoryPath, fileName);
 
     // Ensure directory exists
@@ -161,7 +162,7 @@ ${content}
 
     return NextResponse.json({
       success: true,
-      message: "Task created successfully",
+      message: type === "whatsapp" ? "WhatsApp message queued for sending" : "Task created successfully",
       filePath: path.relative(vaultPath, filePath),
     });
   } catch (error) {

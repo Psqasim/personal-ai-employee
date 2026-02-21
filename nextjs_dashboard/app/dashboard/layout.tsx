@@ -5,16 +5,14 @@ import { useSession, signOut } from "next-auth/react";
 import { useRouter, usePathname } from "next/navigation";
 import { DarkModeToggle } from "@/components/DarkModeToggle";
 import { UserRoleBadge } from "@/components/UserRoleBadge";
-import { CreateTaskModal } from "@/components/CreateTaskModal";
-import { LinkedInPostModal } from "@/components/LinkedInPostModal";
+import { QuickCreateModal } from "@/components/QuickCreateModal";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
   const router = useRouter();
   const pathname = usePathname();
   const [counts, setCounts] = useState({ pending: 0, inProgress: 0, approved: 0 });
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showLinkedIn, setShowLinkedIn] = useState(false);
+  const [showQuickCreate, setShowQuickCreate] = useState(false);
 
   // Compute role before any hooks that depend on it (session may be null during loading)
   const userRole = (session?.user as any)?.role;
@@ -97,16 +95,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             {isAdmin && (
               <>
                 <button
-                  onClick={() => setShowLinkedIn(true)}
-                  className="hidden sm:flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-800 text-white text-xs font-semibold transition-colors"
+                  onClick={() => setShowQuickCreate(true)}
+                  className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors shadow-sm"
                 >
-                  🔗 LinkedIn
-                </button>
-                <button
-                  onClick={() => setShowCreateModal(true)}
-                  className="hidden sm:flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors"
-                >
-                  ➕ New Task
+                  ✨ Quick Create
                 </button>
                 <a
                   href="/dashboard/settings"
@@ -184,16 +176,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* ─── Modals ───────────────────────────────────────────────────── */}
       {isAdmin && (
-        <CreateTaskModal
-          isOpen={showCreateModal}
-          onClose={() => setShowCreateModal(false)}
-          onSuccess={() => {}}
-        />
-      )}
-      {isAdmin && (
-        <LinkedInPostModal
-          isOpen={showLinkedIn}
-          onClose={() => setShowLinkedIn(false)}
+        <QuickCreateModal
+          isOpen={showQuickCreate}
+          onClose={() => setShowQuickCreate(false)}
         />
       )}
     </div>
