@@ -503,8 +503,9 @@ def run_cycle():
 
 # ── Main loop ────────────────────────────────────────────────────────────────
 def run():
+    from cloud_agent.src.command_router import ADMIN_PHONES
     logger.info("🤖 WhatsApp Watcher started (Platinum Tier)")
-    logger.info(f"Poll: {POLL_INTERVAL}s | Chats: {CHATS_TO_CHECK} | Headless: {HEADLESS} | Admin: {ADMIN_NUMBER or 'not set'}")
+    logger.info(f"Poll: {POLL_INTERVAL}s | Chats: {CHATS_TO_CHECK} | Headless: {HEADLESS} | Admin phones: {len(ADMIN_PHONES)} configured | Notify: {ADMIN_NUMBER or 'not set'}")
 
     if not ENABLE:
         logger.warning("ENABLE_WHATSAPP_WATCHER=false — set to true in .env")
