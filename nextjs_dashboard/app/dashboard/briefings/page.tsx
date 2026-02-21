@@ -23,6 +23,9 @@ export default function BriefingsPage() {
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
 
+  const userRole = (session?.user as any)?.role;
+  const isAdmin = userRole === "admin";
+
   const fetchBriefings = async () => {
     try {
       const res = await fetch("/api/briefings");
@@ -63,6 +66,25 @@ export default function BriefingsPage() {
     return (
       <div className="flex items-center justify-center min-h-64">
         <div className="animate-spin rounded-full h-10 w-10 border-4 border-blue-600 border-t-transparent" />
+      </div>
+    );
+  }
+
+  // Block non-admins from viewing CEO briefings (all hooks are above this)
+  if (!isAdmin) {
+    return (
+      <div className="max-w-lg mx-auto px-4 py-24 text-center">
+        <div className="text-5xl mb-4">🔒</div>
+        <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Admin Access Required</h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+          CEO Briefings contain confidential business information and are restricted to administrators.
+        </p>
+        <a
+          href="/dashboard/status"
+          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition-colors"
+        >
+          🏥 Go to MCP Health
+        </a>
       </div>
     );
   }

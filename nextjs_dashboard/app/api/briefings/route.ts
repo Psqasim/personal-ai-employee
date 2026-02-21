@@ -35,6 +35,12 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // CEO Briefings are admin-only — contain cost data and business insights
+  const userRole = (session.user as any)?.role;
+  if (userRole !== "admin") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const briefingsDir = path.join(VAULT_PATH, "Briefings");
 
   if (!fs.existsSync(briefingsDir)) {

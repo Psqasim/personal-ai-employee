@@ -16,6 +16,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showLinkedIn, setShowLinkedIn] = useState(false);
 
+  // Compute role before any hooks that depend on it (session may be null during loading)
+  const userRole = (session?.user as any)?.role;
+  const isAdmin = userRole === "admin";
+
   useEffect(() => {
     if (status === "unauthenticated") router.push("/login");
   }, [status, router]);
@@ -34,6 +38,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return () => clearInterval(interval);
   }, [status]);
 
+  // Redirect viewers away from admin-only pages (hook must be before any early return)
+  useEffect(() => {
+    if (status !== "authenticated" || isAdmin) return;
+    if (pathname === "/dashboard" || pathname === "/dashboard/briefings") {
+      router.push("/dashboard/status");
+    }
+  }, [status, isAdmin, pathname]);
+
   if (status === "loading" || !session) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
@@ -42,14 +54,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     );
   }
 
-  const userRole = (session.user as any)?.role;
-  const isAdmin = userRole === "admin";
-
+  // Admin sees all tabs; viewer only sees non-sensitive pages
   const navItems = [
-    { href: "/dashboard", label: "📋 Approvals", active: pathname === "/dashboard" },
+    ...(isAdmin ? [{ href: "/dashboard", label: "📋 Approvals", active: pathname === "/dashboard" }] : []),
     { href: "/dashboard/status", label: "🏥 MCP Health", active: pathname === "/dashboard/status" },
     { href: "/dashboard/activity", label: "📊 Activity", active: pathname === "/dashboard/activity" },
-    { href: "/dashboard/briefings", label: "📊 CEO Briefings", active: pathname === "/dashboard/briefings" },
+    ...(isAdmin ? [{ href: "/dashboard/briefings", label: "📊 CEO Briefings", active: pathname === "/dashboard/briefings" }] : []),
   ];
 
   return (

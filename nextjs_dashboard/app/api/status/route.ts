@@ -13,9 +13,13 @@ export async function GET() {
   }
 
   try {
-    const pendingApprovals = getPendingApprovals();
+    const userRole = (session.user as any)?.role;
+    const isAdmin = userRole === "admin";
+
     const vaultStatus = getVaultStatus();
-    const recentDone = getRecentDoneItems(10);
+    // Viewers only get counts — no sensitive approval/done details
+    const pendingApprovals = isAdmin ? getPendingApprovals() : [];
+    const recentDone = isAdmin ? getRecentDoneItems(10) : [];
 
     return NextResponse.json({
       approvals: pendingApprovals,

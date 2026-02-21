@@ -100,11 +100,53 @@ export default function DashboardPage() {
   if (!session) return null;
 
   const userRole = (session.user as any).role;
+  const isAdmin = userRole === "admin";
+
+  // Viewer gets a read-only status overview (no sensitive approval details)
+  if (!isAdmin) {
+    return (
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+        <section>
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-8 text-center">
+            <div className="text-5xl mb-4">🤖</div>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">AI Employee is Running</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+              Your AI assistant is actively managing tasks and communications.
+            </p>
+            <div className="flex justify-center gap-6">
+              <div className="text-center">
+                <div className="text-3xl font-bold text-yellow-600 dark:text-yellow-400">{counts.pending}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Pending</div>
+              </div>
+              <div className="w-px bg-gray-200 dark:bg-gray-700" />
+              <div className="text-center">
+                <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">{counts.inProgress}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">In Progress</div>
+              </div>
+              <div className="w-px bg-gray-200 dark:bg-gray-700" />
+              <div className="text-center">
+                <div className="text-3xl font-bold text-green-600 dark:text-green-400">{counts.approved}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Completed</div>
+              </div>
+            </div>
+          </div>
+        </section>
+        <div className="text-center">
+          <a
+            href="/dashboard/status"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition-colors"
+          >
+            🏥 View MCP Health
+          </a>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
 
-      {/* ── Pending Approvals ─────────────────────────────────────────── */}
+      {/* ── Pending Approvals (admin only) ────────────────────────────── */}
       <section>
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -144,7 +186,7 @@ export default function DashboardPage() {
         )}
       </section>
 
-      {/* ── Recently Completed ────────────────────────────────────────── */}
+      {/* ── Recently Completed (admin only) ───────────────────────────── */}
       {recentDone.length > 0 && (
         <section>
           <div className="flex items-center justify-between mb-3">
@@ -188,7 +230,7 @@ export default function DashboardPage() {
         </section>
       )}
 
-      {/* ── API Usage Chart (collapsible) ─────────────────────────────── */}
+      {/* ── API Usage Chart (admin only, collapsible) ─────────────────── */}
       <section>
         <button
           onClick={() => setShowChart(!showChart)}
@@ -210,29 +252,27 @@ export default function DashboardPage() {
         )}
       </section>
 
-      {/* ── Vault Browser (admin, collapsible) ────────────────────────── */}
-      {userRole === "admin" && (
-        <section>
-          <button
-            onClick={() => setShowVault(!showVault)}
-            className="w-full flex items-center justify-between bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-5 py-3.5 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group"
-          >
-            <div className="flex items-center gap-2">
-              <span className="text-base">📁</span>
-              <span className="font-semibold text-gray-900 dark:text-white text-sm">Vault Browser</span>
-              <span className="text-xs text-gray-400">Admin only</span>
-            </div>
-            <span className="text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-200 transition-colors text-sm">
-              {showVault ? "▲ Collapse" : "▼ Expand"}
-            </span>
-          </button>
-          {showVault && vaultSections.length > 0 && (
-            <div className="mt-2">
-              <VaultBrowser sections={vaultSections} onRefresh={fetchStatus} />
-            </div>
-          )}
-        </section>
-      )}
+      {/* ── Vault Browser (admin only, collapsible) ────────────────────── */}
+      <section>
+        <button
+          onClick={() => setShowVault(!showVault)}
+          className="w-full flex items-center justify-between bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-5 py-3.5 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group"
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-base">📁</span>
+            <span className="font-semibold text-gray-900 dark:text-white text-sm">Vault Browser</span>
+            <span className="text-xs text-gray-400">Admin only</span>
+          </div>
+          <span className="text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-200 transition-colors text-sm">
+            {showVault ? "▲ Collapse" : "▼ Expand"}
+          </span>
+        </button>
+        {showVault && vaultSections.length > 0 && (
+          <div className="mt-2">
+            <VaultBrowser sections={vaultSections} onRefresh={fetchStatus} />
+          </div>
+        )}
+      </section>
 
     </main>
   );
