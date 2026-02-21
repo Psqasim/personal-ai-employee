@@ -31,31 +31,39 @@ sys.path.insert(0, str(project_root))
 logger = logging.getLogger(__name__)
 
 # ── Admin detection ───────────────────────────────────────────────────────────
-ADMIN_NAME = os.getenv("WHATSAPP_ADMIN_NAME", "")
-COMMAND_PREFIXES = ("!", "/", "!cmd", "/cmd")
+# Phone numbers that can issue admin commands (comma-separated in env var)
+# e.g. WHATSAPP_ADMIN_PHONES=+923010832227,+923460326429
+_ADMIN_PHONES_RAW = os.getenv("WHATSAPP_ADMIN_PHONES", "")
+
+# Normalize: strip everything except digits, compare last 10 digits
+def _normalize_phone(raw: str) -> str:
+    digits = "".join(c for c in raw if c.isdigit())
+    return digits[-10:] if len(digits) >= 10 else digits
+
+ADMIN_PHONES: set = {
+    _normalize_phone(p.strip())
+    for p in _ADMIN_PHONES_RAW.split(",")
+    if p.strip()
+}
 
 
-def is_admin_command(sender_name: str, message: str) -> bool:
+def is_admin_command(sender: str, message: str) -> bool:
     """
     Return True if this message should be treated as an admin command.
 
-    Conditions (any one is sufficient):
-    1. sender_name matches WHATSAPP_ADMIN_NAME env var (case-insensitive partial match)
-    2. message starts with "!" or "/"
-    3. sender_name is empty but message starts with a command prefix
+    Auth is PHONE NUMBER based only.
+    The last 10 digits of sender are matched against WHATSAPP_ADMIN_PHONES.
+
+    IMPORTANT: For phone matching to work, the admin numbers must NOT be saved
+    as contacts in the WhatsApp account the bot uses. If saved, WhatsApp shows
+    the contact name (e.g. "Muhammad Qasim") instead of the number — matching fails.
+    Solution: delete admin contacts from the bot's phone contact list.
     """
-    msg = message.strip()
+    if not ADMIN_PHONES:
+        return False  # No admin phones configured → all commands blocked
 
-    # Prefix check (works for anyone if they know the prefix)
-    if any(msg.startswith(p) for p in COMMAND_PREFIXES):
-        return True
-
-    # Admin sender check
-    if ADMIN_NAME and sender_name:
-        if ADMIN_NAME.lower() in sender_name.lower() or sender_name.lower() in ADMIN_NAME.lower():
-            return True
-
-    return False
+    sender_norm = _normalize_phone(sender)
+    return bool(sender_norm and sender_norm in ADMIN_PHONES)
 
 
 # ── Few-shot examples for Claude ─────────────────────────────────────────────
