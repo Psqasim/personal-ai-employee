@@ -123,6 +123,11 @@ def handle_admin_command(sender: str, message: str) -> Optional[str]:
 
     result = route_command(message, vault_path=VAULT_PATH)
 
+    # If Claude couldn't parse a command action, treat as normal conversation
+    if result.get("action") == "unknown" or not result["success"] and "Could not parse" in str(result.get("error", "")):
+        logger.info(f"💬 Admin message not a command (falling back to AI chat): {message[:40]}")
+        return None  # caller uses generate_reply() instead
+
     if result["success"]:
         action = result["action"]
         intent = result["intent"]
