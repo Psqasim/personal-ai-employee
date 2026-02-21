@@ -135,6 +135,10 @@ def handle_admin_command(sender: str, message: str) -> Optional[str]:
         draft_name = Path(draft_path).name if draft_path else "draft"
 
         # Build human-readable confirmation
+        # WhatsApp send_message goes directly to Approved/ (no dashboard needed)
+        # All other actions go to Pending_Approval/ (need dashboard review)
+        needs_approval = action != "send_message"
+
         action_labels = {
             "create_draft_invoice": "📋 Invoice draft",
             "create_draft_expense": "💸 Expense draft",
@@ -142,7 +146,7 @@ def handle_admin_command(sender: str, message: str) -> Optional[str]:
             "register_payment":     "💳 Payment draft",
             "create_purchase_bill": "🧾 Vendor bill draft",
             "send_email":           "📧 Email draft",
-            "send_message":         "💬 WhatsApp draft",
+            "send_message":         "💬 WhatsApp",
             "create_post":          "🔗 LinkedIn draft",
         }
         label = action_labels.get(action, f"📝 {action}")
@@ -159,11 +163,15 @@ def handle_admin_command(sender: str, message: str) -> Optional[str]:
         elif action == "register_payment":
             details = f"\nInvoice: {intent.get('invoice_number', '?')}"
 
+        if needs_approval:
+            footer = f"📂 File: {draft_name}\n👉 Open dashboard to approve → execute."
+        else:
+            footer = "⏳ Sending now... will deliver in ~30-60s (no approval needed)."
+
         reply = (
-            f"✅ {label} created!\n"
+            f"✅ {label} {'draft created' if needs_approval else 'queued'}!\n"
             f"{details}\n\n"
-            f"📂 File: {draft_name}\n"
-            f"👉 Open dashboard to approve → execute."
+            f"{footer}"
         ).strip()
 
         logger.info(f"✅ Admin command processed: {action} → {draft_name}")

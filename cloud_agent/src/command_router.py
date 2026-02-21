@@ -418,12 +418,15 @@ mcp_server: email-mcp
         return str(path)
 
     # ── WhatsApp ──────────────────────────────────────────────────────────────
+    # Admin commands skip Pending_Approval and go directly to Approved/
+    # so the local agent sends immediately without dashboard review.
     elif action == "send_message":
         chat_id = intent.get("chat_id", intent.get("to", ""))
         body    = intent.get("body", "")
         safe_chat = chat_id.replace(" ", "_")
         filename  = f"WHATSAPP_DRAFT_CMD_{safe_chat}_{ts}.md"
-        folder    = vault / "Pending_Approval" / "WhatsApp"
+        # Write directly to Approved/ — admin already authorized it by sending the command
+        folder    = vault / "Approved" / "WhatsApp"
         folder.mkdir(parents=True, exist_ok=True)
 
         content = f"""---
@@ -432,24 +435,23 @@ action: send_message
 chat_id: "{chat_id}"
 to: "{chat_id}"
 draft_body: "{body}"
-status: pending_approval
+status: approved
 generated_at: {now_iso}
 source: command_router
 mcp_server: whatsapp-mcp
 ---
 
-## WhatsApp Draft
+## WhatsApp Message
 
 **To:** {chat_id}
 
 {body}
 
-> Created from command: `{intent.get('raw_command', '')}`
-> Approve to send this WhatsApp message.
+> Auto-approved admin command: `{intent.get('raw_command', '')}`
 """
         path = folder / filename
         path.write_text(content, encoding="utf-8")
-        logger.info(f"📄 Created WhatsApp draft: {path}")
+        logger.info(f"📤 Created auto-approved WhatsApp send: {path}")
         return str(path)
 
     # ── LinkedIn ──────────────────────────────────────────────────────────────
