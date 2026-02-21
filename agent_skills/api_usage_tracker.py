@@ -181,6 +181,10 @@ class APIUsageTracker:
 
         return total
 
+    def get_daily_cost(self, date: Optional[str] = None) -> float:
+        """Alias for get_daily_total() — used by orchestrator morning summary."""
+        return self.get_daily_total(date)
+
     def get_weekly_total(self) -> float:
         """
         Get total cost for current week (last 7 days)

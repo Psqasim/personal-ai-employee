@@ -25,6 +25,7 @@ except ImportError:
 from agent_skills.env_validator import EnvValidator
 from agent_skills.git_sync_state import GitSyncStateManager
 from agent_skills.api_usage_tracker import APIUsageTracker
+from agent_skills.resource_monitor import ResourceMonitor
 from cloud_agent.src.notifications.whatsapp_notifier import (
     notify_urgent_email,
     notify_pending_approvals,
@@ -61,6 +62,7 @@ class CloudOrchestrator:
         # Initialize components
         self.sync_state_mgr = GitSyncStateManager(self.vault_path)
         self.api_tracker = APIUsageTracker(self.vault_path, self.agent_id)
+        self.resource_monitor = ResourceMonitor(self.vault_path)
 
         # Track last morning summary sent (avoid duplicates)
         self._morning_summary_sent_date: str = ""
@@ -328,6 +330,9 @@ class CloudOrchestrator:
         Run all Cloud Agent tasks
         """
         try:
+            # 0. Resource monitoring (CPU/Memory alert — self-throttles to every 5 min)
+            self.resource_monitor.check()
+
             # 1. Poll Gmail for new emails
             self.poll_gmail()
 
