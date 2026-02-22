@@ -1,8 +1,28 @@
 # Personal AI Employee — Manual Setup & Operations Guide
 
-> **Last updated:** 2026-02-18
-> **Branch:** `003-platinum-tier`
+> **Last updated:** 2026-02-22
 > **Covers:** Local machine setup · Oracle Cloud VM setup · PM2 · WhatsApp watcher · Claude API · Re-auth · Restart / Stop / Troubleshoot
+
+---
+
+## Where to Run Commands — Quick Reference
+
+| Command type | Where to run | Example prompt |
+|---|---|---|
+| WhatsApp setup/reauth | **WSL `/tmp`** | `ps_qasim@MUHAMMADQASIM:/tmp$` |
+| PM2 start/stop/logs | **Project folder** | `ps_qasim@MUHAMMADQASIM:~/...personal-ai-employee$` |
+| git commands | **Project folder** | same as above |
+| Oracle SSH | **Anywhere (WSL root fine)** | `ps_qasim@MUHAMMADQASIM:~$` |
+| Oracle VM commands | **Inside SSH session** | `ubuntu@personal-ai-vcn:~$` |
+
+**Project folder shortcut:**
+```bash
+cd "/mnt/d/gov ai code/QUATER 4 part 2/hacakthon/personal-ai-employee"
+```
+
+**Why `/tmp` for WhatsApp setup?**
+WSL2 Playwright hangs indefinitely if the working directory is on a Windows mount (`/mnt/d/...`).
+Always `cd /tmp` before running any `wa_local_setup.py` or `wa_reauth.py` locally.
 
 ---
 
