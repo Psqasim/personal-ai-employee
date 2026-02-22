@@ -145,21 +145,24 @@ WHATSAPP_ADMIN_NUMBER=923460326429  # Your number (no + sign)
 CHATS_TO_CHECK=5
 ```
 
-### 3.3 WhatsApp Session — First Time (Local)
+### 3.3 WhatsApp Session — First Time (Local / WSL2)
 
-The first time you run WhatsApp locally, you must scan a QR code:
+> **WSL2 users:** Use `wa_local_setup.py` (headless + pairing code).
+> `setup_whatsapp_session.py` opens a visible browser window which WSL2 cannot display.
 
 ```bash
-# Run setup script (opens visible Chrome window)
-python scripts/setup_whatsapp_session.py
-# OR
-python scripts/whatsapp_qr_setup.py
+# Delete old/invalid session first (if re-authenticating)
+rm -rf ~/.whatsapp_session_dir
+
+# MUST cd to /tmp first — WSL2 Playwright hangs if CWD is on /mnt/d Windows mount
+cd /tmp
+python "/mnt/d/gov ai code/QUATER 4 part 2/hacakthon/personal-ai-employee/scripts/wa_local_setup.py"
 ```
 
-1. Chrome will open WhatsApp Web
-2. Scan the QR code with your phone
-3. Once logged in, the session is saved to `WHATSAPP_SESSION_PATH`
-4. Close the script — session persists
+1. Script starts headless Chrome (~25s to load)
+2. Prints `PAIRING CODE: XXXX-YYYY`
+3. Phone → **WhatsApp** → **⋮** → **Linked Devices** → **Link a Device** → **"Link with phone number instead"** → enter code within 60s
+4. Script prints `✅ AUTH SUCCESS` — session saved
 
 ### 3.4 Start Local Agent via PM2
 
@@ -399,7 +402,7 @@ UA = ('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
 | Feature | Local | Cloud |
 |---------|-------|-------|
 | `PLAYWRIGHT_HEADLESS` | `false` (visible) | `true` (headless) |
-| First auth | QR code scan | Phone number pairing code |
+| First auth | Phone number pairing code (`wa_local_setup.py`) | Phone number pairing code (`wa_reauth.py`) |
 | Browser lock | Shared with MCP server | Watcher only |
 | Session dir | Custom path in `.env` | `/home/ubuntu/.whatsapp_session_dir` |
 | PM2 config | `ecosystem.config.local.js` | `ecosystem.config.js` |
@@ -577,22 +580,24 @@ pm2 delete wa_auth
 pm2 save
 ```
 
-### 8.6 Re-authenticate WhatsApp on Local
+### 8.6 Re-authenticate WhatsApp on Local (WSL2)
 
 ```bash
 # Stop watcher if running
 pm2 stop whatsapp_watcher_local 2>/dev/null || true
 
-# Delete old session (forces fresh QR)
+# Delete old session
 rm -rf ~/.whatsapp_session_dir
 
-# Run QR setup (opens visible browser)
-source venv/bin/activate
-python scripts/setup_whatsapp_session.py
-# Scan the QR code on your phone
+# MUST run from /tmp (WSL2 Playwright requirement)
+cd /tmp
+python "/mnt/d/gov ai code/QUATER 4 part 2/hacakthon/personal-ai-employee/scripts/wa_local_setup.py"
+# Wait ~25s → enter PAIRING CODE on phone (not QR — headless WSL2)
 
 # Restart watcher after auth
+cd "/mnt/d/gov ai code/QUATER 4 part 2/hacakthon/personal-ai-employee"
 pm2 start ecosystem.config.local.js
+pm2 save
 ```
 
 ### 8.7 Update Code on Cloud (Manual)
