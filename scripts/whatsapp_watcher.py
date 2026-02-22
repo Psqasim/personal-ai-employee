@@ -348,6 +348,7 @@ def _wait_for_whatsapp(page) -> bool:
     page.wait_for_timeout(20000 if HEADLESS else 4000)
     page.wait_for_selector(f'{CHAT_LIST}, {QR_CODE}', timeout=60000)
     # Check any login-required indicator (canvas OR img QR, landing page, phone link)
+    # Also check absence of chat list as final fallback (page loaded but no chats = logged out)
     is_login_page = any(
         page.locator(sel).count() > 0
         for sel in [
@@ -355,7 +356,13 @@ def _wait_for_whatsapp(page) -> bool:
             'img[alt="Scan this QR code to link a device"]',
             'div[data-testid="intro-title"]',
             'a[href*="phone-number"]',
+            'div.landing-title',
+            'div.app-wrapper-web.no-list',
         ]
+    ) or (
+        # App loaded but neither chat list nor pane-side exists = session expired
+        page.locator('div.app-wrapper-web').count() > 0
+        and page.locator(CHAT_LIST).count() == 0
     )
     if is_login_page:
         logger.error("Login page shown — session expired. Re-run wa_reauth.py")
