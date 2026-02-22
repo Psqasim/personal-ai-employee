@@ -14,13 +14,18 @@ async function sendEmailDirectly(filePath: string): Promise<{ sent: boolean; err
     const raw = fs.readFileSync(fullPath, "utf-8");
     const { data, content } = matter(raw);
 
-    if (data.type !== "email") return { sent: false };
+    // Support both: type=email (manual drafts) AND action=send_email (command_router drafts)
+    const isEmail = data.type === "email" || data.action === "send_email";
+    if (!isEmail) return { sent: false };
 
     const smtpPass = process.env.SMTP_PASSWORD || process.env.SMTP_PASS;
     if (!smtpPass) {
       console.error("Email approve: SMTP_PASSWORD not set, skipping send");
       return { sent: false, error: "SMTP_PASSWORD not configured" };
     }
+
+    // draft_body is set by command_router; content is the markdown body for manual drafts
+    const emailBody = (data.draft_body as string) || content.trim();
 
     const transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST || "smtp.gmail.com",
@@ -36,7 +41,7 @@ async function sendEmailDirectly(filePath: string): Promise<{ sent: boolean; err
       from: `"AI Employee" <${process.env.SMTP_USER}>`,
       to: data.to,
       subject: data.subject || "(no subject)",
-      text: content.trim(),
+      text: emailBody,
     });
 
     console.log(`Email sent to ${data.to}: ${data.subject}`);
@@ -71,7 +76,8 @@ export async function POST(request: NextRequest) {
     try {
       const raw = fs.readFileSync(path.join(VAULT_PATH, filePath), "utf-8");
       const { data } = matter(raw);
-      itemType = data.type || "";
+      // Support type=email (manual) and action=send_email (command_router)
+      itemType = data.type === "email" || data.action === "send_email" ? "email" : (data.type || "");
     } catch {}
 
     const success = approveItem(filePath);

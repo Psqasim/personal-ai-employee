@@ -17,9 +17,11 @@ Created: 2026-02-17
 
 import os
 import sys
+import re
 import time
 import fcntl
 import json
+import shutil
 import logging
 from contextlib import contextmanager
 from pathlib import Path
@@ -382,6 +384,80 @@ def _read_last_msg(page) -> str:
     return ""
 
 
+def _parse_vault_frontmatter(file_path: Path) -> dict:
+    """Parse YAML frontmatter from a vault .md file (minimal parser)."""
+    try:
+        raw = file_path.read_text(encoding="utf-8")
+        m = re.match(r'^---\n(.*?)\n---', raw, re.DOTALL)
+        if not m:
+            return {}
+        fm: dict = {}
+        for line in m.group(1).splitlines():
+            if ':' not in line:
+                continue
+            k, _, v = line.partition(':')
+            v = v.strip().strip('"').strip("'")
+            # Handle multi-line values (draft_body)
+            fm[k.strip()] = v
+        return fm
+    except Exception:
+        return {}
+
+
+def _send_vault_whatsapp_drafts(page) -> None:
+    """
+    Check vault/Approved/WhatsApp/ for pending send_message drafts and deliver them.
+    Called inside the Phase-3 browser session — reuses the already-open WhatsApp page.
+    Moves file to Done/ on success, Failed/ on error.
+    """
+    wa_approved = Path(VAULT_PATH) / "Approved" / "WhatsApp"
+    wa_done     = Path(VAULT_PATH) / "Done"     / "WhatsApp"
+    wa_failed   = Path(VAULT_PATH) / "Failed"   / "WhatsApp"
+
+    if not wa_approved.exists():
+        return
+
+    draft_files = sorted(wa_approved.glob("*.md"))
+    if not draft_files:
+        return
+
+    wa_done.mkdir(parents=True, exist_ok=True)
+    wa_failed.mkdir(parents=True, exist_ok=True)
+
+    for draft_file in draft_files:
+        fm = _parse_vault_frontmatter(draft_file)
+        if fm.get("action") != "send_message":
+            continue
+
+        chat_id  = fm.get("chat_id") or fm.get("to", "")
+        body     = fm.get("draft_body", "")
+
+        if not chat_id or not body:
+            logger.warning(f"Vault WA draft missing chat_id or body: {draft_file.name}")
+            shutil.move(str(draft_file), str(wa_failed / draft_file.name))
+            continue
+
+        # Strip non-digits for URL, keep international format (no leading +)
+        phone = re.sub(r"[^\d]", "", chat_id)
+
+        try:
+            logger.info(f"📤 Vault WA: sending to +{phone}...")
+            # Navigate to WhatsApp send URL — pre-fills message
+            page.goto(f"https://web.whatsapp.com/send?phone={phone}&text={body}",
+                      wait_until="domcontentloaded", timeout=30000)
+            # Wait for message input to confirm chat opened
+            msg_box = page.wait_for_selector(MSG_INPUT, timeout=30000)
+            page.wait_for_timeout(2000)   # Let text pre-fill settle
+            msg_box.click()
+            page.keyboard.press("Enter")
+            page.wait_for_timeout(2000)
+            logger.info(f"✅ Vault WA sent to +{phone}: {body[:50]}")
+            shutil.move(str(draft_file), str(wa_done / draft_file.name))
+        except Exception as e:
+            logger.warning(f"⚠️ Vault WA send failed for +{phone}: {e}")
+            shutil.move(str(draft_file), str(wa_failed / draft_file.name))
+
+
 # ── Core cycle ───────────────────────────────────────────────────────────────
 def run_cycle(warm_up: bool = False):
     """
@@ -537,6 +613,13 @@ def run_cycle(warm_up: bool = False):
                         cache_key = f"{sender}:{last_msg[:50]}"
                         _replied_cache.add(cache_key)
                         log_action(sender, last_msg, reply, is_urgent(last_msg), sent)
+
+                    # Phase 3.5 — Send any vault/Approved/WhatsApp/ drafts
+                    # (admin "send message to X" commands land here)
+                    try:
+                        _send_vault_whatsapp_drafts(page)
+                    except Exception as e:
+                        logger.warning(f"Vault WA drafts error: {e}")
 
                 except (PlaywrightTimeout, Exception) as e:
                     logger.warning(f"Phase-3 error: {e}")
