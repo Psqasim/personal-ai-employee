@@ -96,9 +96,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <>
                 <button
                   onClick={() => setShowQuickCreate(true)}
-                  className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors shadow-sm"
+                  className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors shadow-sm"
                 >
-                  ✨ Quick Create
+                  ✨ <span className="hidden xs:inline sm:inline">Quick Create</span><span className="sm:hidden">Create</span>
                 </button>
                 <a
                   href="/dashboard/settings"

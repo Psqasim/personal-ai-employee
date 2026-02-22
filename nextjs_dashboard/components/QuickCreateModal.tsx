@@ -242,11 +242,11 @@ export function QuickCreateModal({ isOpen, onClose, onSuccess }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] overflow-y-auto flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm px-2 sm:px-4 pb-0 sm:pb-0">
+      <div className="bg-white dark:bg-gray-800 rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-2xl max-h-[95vh] sm:max-h-[92vh] overflow-y-auto flex flex-col">
 
         {/* ── Header ─────────────────────────────────────────────────── */}
-        <div className="px-6 pt-5 pb-4 border-b border-gray-200 dark:border-gray-700 shrink-0">
+        <div className="px-4 sm:px-6 pt-4 sm:pt-5 pb-3 sm:pb-4 border-b border-gray-200 dark:border-gray-700 shrink-0">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-xl font-bold text-gray-900 dark:text-white">✨ Quick Create</h2>
@@ -263,19 +263,19 @@ export function QuickCreateModal({ isOpen, onClose, onSuccess }: Props) {
           </div>
 
           {/* Type tabs */}
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
             {TABS.map((tab) => (
               <button
                 key={tab.type}
                 type="button"
                 onClick={() => handleTabChange(tab.type)}
-                className={`flex flex-col items-center gap-1.5 py-3 rounded-xl border-2 font-medium transition-all ${
+                className={`flex flex-col items-center gap-1 sm:gap-1.5 py-2 sm:py-3 rounded-xl border-2 font-medium transition-all ${
                   taskType === tab.type
                     ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 shadow-sm"
                     : "border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700/50"
                 }`}
               >
-                <span className="text-2xl">{tab.icon}</span>
+                <span className="text-xl sm:text-2xl">{tab.icon}</span>
                 <span className="text-xs font-semibold">{tab.label}</span>
               </button>
             ))}
@@ -283,7 +283,7 @@ export function QuickCreateModal({ isOpen, onClose, onSuccess }: Props) {
         </div>
 
         {/* ── Body ───────────────────────────────────────────────────── */}
-        <div className="px-6 py-5 space-y-5 flex-1">
+        <div className="px-4 sm:px-6 py-4 sm:py-5 space-y-4 sm:space-y-5 flex-1">
 
           {/* ══════════════════════════════════════════════════════════════
               LINKEDIN TAB (unchanged flow)
@@ -319,7 +319,7 @@ export function QuickCreateModal({ isOpen, onClose, onSuccess }: Props) {
                     <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
                       What should the post be about?
                     </label>
-                    <div className="flex gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2">
                       <input
                         type="text" value={topic}
                         onChange={(e) => setTopic(e.target.value)}
@@ -328,7 +328,7 @@ export function QuickCreateModal({ isOpen, onClose, onSuccess }: Props) {
                         className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                       <button onClick={handleLiGenerate} disabled={generating || !topic.trim()}
-                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 whitespace-nowrap">
+                        className="w-full sm:w-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-1.5">
                         {generating
                           ? <><span className="animate-spin inline-block">⟳</span> Generating...</>
                           : <>✨ {liStep === "preview" ? "Regenerate" : "Generate"}</>}
@@ -426,7 +426,7 @@ export function QuickCreateModal({ isOpen, onClose, onSuccess }: Props) {
                   </label>
                   <span className="text-xs bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded-full font-medium">Claude AI</span>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <input
                     type="text"
                     value={aiPrompt}
@@ -439,7 +439,7 @@ export function QuickCreateModal({ isOpen, onClose, onSuccess }: Props) {
                     type="button"
                     onClick={handleAiGenerate}
                     disabled={generating || !aiPrompt.trim()}
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 whitespace-nowrap"
+                    className="w-full sm:w-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-1.5"
                   >
                     {generating
                       ? <><span className="animate-spin inline-block">⟳</span> Generating...</>
