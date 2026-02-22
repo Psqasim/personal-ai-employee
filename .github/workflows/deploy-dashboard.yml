@@ -23,7 +23,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: nextjs_dashboard
-        run: npm install
+        run: npm install --legacy-peer-deps
 
       - name: Build Next.js
         working-directory: nextjs_dashboard
