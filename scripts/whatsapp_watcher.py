@@ -107,7 +107,12 @@ VAULT_PATH = os.getenv("VAULT_PATH", str(project_root / "vault"))
 # WhatsApp Web selectors
 MSG_INPUT   = 'div[contenteditable="true"][data-tab="10"]'
 CHAT_LIST   = 'div[aria-label="Chat list"], #pane-side'
-QR_CODE     = 'canvas[aria-label="Scan this QR code to link a device!"]'
+# WhatsApp Web updated: QR is now an <img>, not <canvas>. Also detect the
+# "Steps to log in" landing page (login-required / session expired state).
+QR_CODE     = ('canvas[aria-label="Scan this QR code to link a device!"], '
+               'img[alt="Scan this QR code to link a device"], '
+               'div[data-testid="intro-title"], '
+               'a[href*="phone-number"]')
 
 
 @contextmanager
@@ -342,8 +347,18 @@ def _wait_for_whatsapp(page) -> bool:
     # Cloud VM (headless) needs more time for JS-heavy WhatsApp Web to initialise
     page.wait_for_timeout(20000 if HEADLESS else 4000)
     page.wait_for_selector(f'{CHAT_LIST}, {QR_CODE}', timeout=60000)
-    if page.locator(QR_CODE).count() > 0:
-        logger.error("QR shown — re-run setup_whatsapp_session.py")
+    # Check any login-required indicator (canvas OR img QR, landing page, phone link)
+    is_login_page = any(
+        page.locator(sel).count() > 0
+        for sel in [
+            'canvas[aria-label="Scan this QR code to link a device!"]',
+            'img[alt="Scan this QR code to link a device"]',
+            'div[data-testid="intro-title"]',
+            'a[href*="phone-number"]',
+        ]
+    )
+    if is_login_page:
+        logger.error("Login page shown — session expired. Re-run wa_reauth.py")
         return False
     page.wait_for_timeout(2000)
     _dismiss_dialogs(page)  # clear any popup before interacting
