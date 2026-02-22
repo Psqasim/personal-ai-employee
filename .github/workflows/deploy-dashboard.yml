@@ -1,0 +1,70 @@
+name: Deploy Dashboard to Oracle VM
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'nextjs_dashboard/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: nextjs_dashboard/package-lock.json
+
+      - name: Install dependencies
+        working-directory: nextjs_dashboard
+        run: npm install
+
+      - name: Build Next.js
+        working-directory: nextjs_dashboard
+        run: npm run build
+        env:
+          NEXTAUTH_URL: http://129.151.151.212:3000
+          NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+          AUTH_TRUST_HOST: 'true'
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.ORACLE_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H 129.151.151.212 >> ~/.ssh/known_hosts
+
+      - name: Rsync build to Oracle VM
+        run: |
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/deploy_key" \
+            nextjs_dashboard/.next/ \
+            ubuntu@129.151.151.212:/opt/personal-ai-employee/nextjs_dashboard/.next/
+
+      - name: Pull latest code on Oracle VM
+        run: |
+          ssh -i ~/.ssh/deploy_key ubuntu@129.151.151.212 \
+            "cd /opt/personal-ai-employee && git pull origin main"
+
+      - name: Restart PM2
+        run: |
+          ssh -i ~/.ssh/deploy_key ubuntu@129.151.151.212 \
+            "pm2 restart nextjs_dashboard && pm2 save"
+
+      - name: Verify deployment
+        run: |
+          sleep 5
+          HTTP=$(ssh -i ~/.ssh/deploy_key ubuntu@129.151.151.212 \
+            "curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/login")
+          echo "HTTP status: $HTTP"
+          if [ "$HTTP" != "200" ]; then
+            echo "❌ Deploy failed - HTTP $HTTP"
+            exit 1
+          fi
+          echo "✅ Dashboard live at http://129.151.151.212:3000"
