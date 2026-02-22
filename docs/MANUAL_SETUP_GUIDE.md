@@ -186,20 +186,47 @@ python "/mnt/d/gov ai code/QUATER 4 part 2/hacakthon/personal-ai-employee/script
 
 ### 3.4 Start Local Agent via PM2
 
+> **PM2 v6 + WSL2 note:** `pm2 start ecosystem.config.local.js` breaks when the project path has
+> spaces (e.g. `/mnt/d/gov ai code/...`). PM2 doesn't quote the path, so bash splits on the space.
+> The fix: use trampoline scripts stored at `$HOME` (no spaces) + `pm2.local.json`.
+
+**One-time trampoline setup** (only needed after a fresh clone):
+
 ```bash
-# Install PM2 (once)
-npm install -g pm2
+# The trampoline scripts are already at ~/pai_agent.sh and ~/pai_whatsapp.sh
+# If they don't exist (new machine), recreate them:
+cat > ~/pai_agent.sh << 'EOF'
+#!/bin/bash
+PROJECT="/mnt/d/gov ai code/QUATER 4 part 2/hacakthon/personal-ai-employee"
+exec bash "$PROJECT/scripts/run_local_agent.sh"
+EOF
 
-# Start local services
-pm2 start ecosystem.config.local.js
+cat > ~/pai_whatsapp.sh << 'EOF'
+#!/bin/bash
+PROJECT="/mnt/d/gov ai code/QUATER 4 part 2/hacakthon/personal-ai-employee"
+exec bash "$PROJECT/scripts/pm2_whatsapp_wrapper.sh"
+EOF
 
-# Check status
+chmod +x ~/pai_agent.sh ~/pai_whatsapp.sh
+```
+
+**Start all local services:**
+
+```bash
+# From the project folder
+cd "/mnt/d/gov ai code/QUATER 4 part 2/hacakthon/personal-ai-employee"
+
+# Start both processes using the JSON config
+pm2 start pm2.local.json
+
+# Check status (should show local_approval_handler + whatsapp_watcher_local)
 pm2 list
 
 # View logs
 pm2 logs local_approval_handler
+pm2 logs whatsapp_watcher_local
 
-# Save so it auto-starts on reboot
+# Save so processes survive WSL2 restart
 pm2 save
 pm2 startup     # follow the printed command
 ```
@@ -207,16 +234,9 @@ pm2 startup     # follow the printed command
 ### 3.5 Start WhatsApp Watcher Locally (without PM2)
 
 ```bash
+cd "/mnt/d/gov ai code/QUATER 4 part 2/hacakthon/personal-ai-employee"
 source venv/bin/activate
 python scripts/whatsapp_watcher.py
-```
-
-Or via PM2 (add to `ecosystem.config.local.js` if needed):
-
-```bash
-pm2 start scripts/whatsapp_watcher.py \
-  --name whatsapp_watcher_local \
-  --interpreter venv/bin/python
 ```
 
 ---
@@ -486,7 +506,11 @@ pm2 monit                         # Live CPU/memory dashboard
 
 | PM2 Name | Script | Purpose |
 |----------|--------|---------|
-| `local_approval_handler` | `scripts/run_local_agent.sh` | Email approval & send |
+| `local_approval_handler` | `~/pai_agent.sh` → `scripts/run_local_agent.sh` | Email approval & send |
+| `whatsapp_watcher_local` | `~/pai_whatsapp.sh` → `scripts/pm2_whatsapp_wrapper.sh` | WhatsApp AI reply (local) |
+
+> **Why `~/pai_*.sh` trampolines?** PM2 v6 on WSL2 doesn't quote paths that have spaces.
+> Project lives at `/mnt/d/gov ai code/...` (spaces!). Trampolines at `$HOME` have no spaces.
 
 ---
 
@@ -549,8 +573,10 @@ pm2 logs whatsapp_watcher --lines 30
 ### 8.3 Restart Everything (Local)
 
 ```bash
-cd /path/to/personal-ai-employee
-pm2 restart ecosystem.config.local.js
+pm2 restart local_approval_handler
+pm2 restart whatsapp_watcher_local
+# or
+pm2 restart all
 ```
 
 ### 8.4 Stop Everything
@@ -559,8 +585,9 @@ pm2 restart ecosystem.config.local.js
 # Cloud
 pm2 stop all
 
-# Local
-pm2 stop ecosystem.config.local.js
+# Local (individual)
+pm2 stop local_approval_handler
+pm2 stop whatsapp_watcher_local
 ```
 
 ### 8.5 Re-authenticate WhatsApp on Cloud
@@ -602,23 +629,49 @@ pm2 save
 
 ### 8.6 Re-authenticate WhatsApp on Local (WSL2)
 
-```bash
-# Stop watcher if running
-pm2 stop whatsapp_watcher_local 2>/dev/null || true
+**When to do this:** If watcher logs show `Session expired`, `QR code`, or AI replies stop coming.
 
-# Delete old session
+```bash
+# 1. Stop the watcher (needs exclusive Chrome access)
+pm2 stop whatsapp_watcher_local
+
+# 2. Delete old/stale session
 rm -rf ~/.whatsapp_session_dir
 
-# MUST run from /tmp (WSL2 Playwright requirement)
+# 3. MUST cd to /tmp first — WSL2 Playwright hangs if CWD is on /mnt/d Windows mount
 cd /tmp
 python "/mnt/d/gov ai code/QUATER 4 part 2/hacakthon/personal-ai-employee/scripts/wa_local_setup.py"
-# Wait ~25s → enter PAIRING CODE on phone (not QR — headless WSL2)
-
-# Restart watcher after auth
-cd "/mnt/d/gov ai code/QUATER 4 part 2/hacakthon/personal-ai-employee"
-pm2 start ecosystem.config.local.js
-pm2 save
 ```
+
+**After ~25 seconds you'll see:**
+```
+==================================================
+  PAIRING CODE: XXXX-YYYY
+==================================================
+```
+
+On your phone:
+1. Open **WhatsApp**
+2. **⋮ (3-dot menu)** → **Linked Devices** → **Link a Device**
+3. Tap **"Link with phone number instead"**
+4. Enter the 8-character code within 60 seconds
+
+After `✅ AUTH SUCCESS`:
+
+```bash
+# 4. Restart the watcher — session is now saved
+pm2 start whatsapp_watcher_local
+pm2 save
+
+# 5. Verify it's polling
+pm2 logs whatsapp_watcher_local --lines 20
+# Should see: "Found N chats, checking first 5"
+```
+
+**Note:** The WhatsApp session persists across PC restarts. You only need to re-auth if:
+- You manually remove a linked device in WhatsApp
+- Session is inactive for 14+ days
+- Browser profile gets corrupted
 
 ### 8.7 Update Code on Cloud (Manual)
 
@@ -678,6 +731,58 @@ If restart count is high, stop it and fix the underlying error:
 pm2 stop <name>
 # fix the issue
 pm2 start <name>
+```
+
+### PM2 v6 + WSL2: "Is a directory" / "cannot execute binary file"
+
+**Symptom:** Logs show `/usr/bin/bash: line 1: /mnt/d/gov: Is a directory`
+
+**Cause:** PM2 v6 on WSL2 doesn't quote paths with spaces. The project path `/mnt/d/gov ai code/...`
+gets split at the space — bash sees `/mnt/d/gov` (a directory) instead of the script.
+
+**Fix:** Always use the trampoline scripts and `pm2.local.json`:
+
+```bash
+# Wrong — will fail:
+pm2 start ecosystem.config.local.js
+
+# Correct:
+pm2 start pm2.local.json
+
+# Or start individually using the trampoline scripts:
+pm2 start ~/pai_agent.sh --name local_approval_handler
+pm2 start ~/pai_whatsapp.sh --name whatsapp_watcher_local
+```
+
+If trampolines don't exist yet (new machine):
+```bash
+cat > ~/pai_agent.sh << 'EOF'
+#!/bin/bash
+PROJECT="/mnt/d/gov ai code/QUATER 4 part 2/hacakthon/personal-ai-employee"
+exec bash "$PROJECT/scripts/run_local_agent.sh"
+EOF
+cat > ~/pai_whatsapp.sh << 'EOF'
+#!/bin/bash
+PROJECT="/mnt/d/gov ai code/QUATER 4 part 2/hacakthon/personal-ai-employee"
+exec bash "$PROJECT/scripts/pm2_whatsapp_wrapper.sh"
+EOF
+chmod +x ~/pai_agent.sh ~/pai_whatsapp.sh
+```
+
+### WhatsApp AI Replies Are Generic ("Qasim is currently busy")
+
+**Cause:** `CLAUDE_API_KEY` is in `.env` but the watcher expects `ANTHROPIC_API_KEY`.
+The wrapper script `scripts/pm2_whatsapp_wrapper.sh` maps one to the other automatically.
+
+**Check:**
+```bash
+pm2 logs whatsapp_watcher_local --lines 20
+# Look for: "Claude API error: Could not resolve authentication method"
+```
+
+**Fix:** Confirm `.env` has `CLAUDE_API_KEY=sk-ant-...` set, then restart:
+```bash
+pm2 restart whatsapp_watcher_local
 ```
 
 ### Check VM Memory

@@ -1,0 +1,31 @@
+{
+  "_comment": "PM2 v6 + WSL2 fix: project path has spaces. Use trampoline scripts at $HOME (no spaces) instead of project path directly.",
+  "apps": [
+    {
+      "name": "local_approval_handler",
+      "script": "/home/ps_qasim/pai_agent.sh",
+      "exec_interpreter": "bash",
+      "cwd": "/home/ps_qasim",
+      "watch": false,
+      "autorestart": true,
+      "max_restarts": 10,
+      "restart_delay": 5000,
+      "log_date_format": "YYYY-MM-DD HH:mm:ss",
+      "error_file": "/mnt/d/gov ai code/QUATER 4 part 2/hacakthon/personal-ai-employee/vault/Logs/Local/pm2_error.log",
+      "out_file": "/mnt/d/gov ai code/QUATER 4 part 2/hacakthon/personal-ai-employee/vault/Logs/Local/pm2_out.log"
+    },
+    {
+      "name": "whatsapp_watcher_local",
+      "script": "/home/ps_qasim/pai_whatsapp.sh",
+      "exec_interpreter": "bash",
+      "cwd": "/home/ps_qasim",
+      "watch": false,
+      "autorestart": true,
+      "max_restarts": 10,
+      "restart_delay": 10000,
+      "log_date_format": "YYYY-MM-DD HH:mm:ss",
+      "error_file": "/mnt/d/gov ai code/QUATER 4 part 2/hacakthon/personal-ai-employee/vault/Logs/Local/whatsapp_error.log",
+      "out_file": "/mnt/d/gov ai code/QUATER 4 part 2/hacakthon/personal-ai-employee/vault/Logs/Local/whatsapp_out.log"
+    }
+  ]
+}

@@ -19,6 +19,7 @@ import os
 import sys
 import time
 import fcntl
+import json
 import logging
 from contextlib import contextmanager
 from pathlib import Path
@@ -63,6 +64,38 @@ URGENT_KEYWORDS = [
 ]
 
 _replied_cache: set = set()
+_warmed_up: bool = False  # True after first-cycle dry-run completes
+
+# Persist cache to disk so it survives restarts (avoids replying to old messages again)
+_CACHE_FILE = os.path.expanduser("~/.whatsapp_replied_cache.json")
+_CACHE_MAX_AGE_HOURS = 24
+
+
+def _load_cache() -> None:
+    """Load persisted reply cache — only keep entries < 24h old."""
+    global _replied_cache
+    try:
+        if os.path.exists(_CACHE_FILE):
+            with open(_CACHE_FILE) as f:
+                data = json.load(f)
+            cutoff = time.time() - _CACHE_MAX_AGE_HOURS * 3600
+            _replied_cache = {k for k, ts in data.items() if ts > cutoff}
+            logger.info(f"📂 Loaded {len(_replied_cache)} cache entries from disk")
+    except Exception as e:
+        logger.warning(f"Cache load error (starting fresh): {e}")
+        _replied_cache = set()
+
+
+def _save_cache() -> None:
+    """Persist reply cache to disk with timestamps."""
+    try:
+        now = time.time()
+        data = {k: now for k in _replied_cache}
+        with open(_CACHE_FILE, "w") as f:
+            json.dump(data, f)
+    except Exception as e:
+        logger.warning(f"Cache save error: {e}")
+
 
 # Shared lock file — prevents watcher and MCP server from opening Chrome simultaneously
 BROWSER_LOCK_FILE = "/tmp/whatsapp_browser.lock"
@@ -350,7 +383,7 @@ def _read_last_msg(page) -> str:
 
 
 # ── Core cycle ───────────────────────────────────────────────────────────────
-def run_cycle():
+def run_cycle(warm_up: bool = False):
     """
     3-phase cycle — browser is closed before Claude API is called,
     so long API calls never crash the browser:
@@ -358,6 +391,9 @@ def run_cycle():
     Phase 1 (browser open):  Read messages from first N chats → close browser
     Phase 2 (no browser):    Generate Claude replies for each message
     Phase 3 (browser open):  Send each reply in the correct chat → close browser
+
+    warm_up=True: Phase 1 only — populate cache without sending any replies.
+    Used on startup to skip old/pre-existing messages.
     """
     if not os.path.isdir(SESSION_PATH):
         logger.error(f"Session missing: {SESSION_PATH} — run setup_whatsapp_session.py")
@@ -399,6 +435,13 @@ def run_cycle():
                                 continue
 
                             _seen_this_cycle.add(cache_key)
+
+                            if warm_up:
+                                # Dry-run: mark as seen but don't reply
+                                _replied_cache.add(cache_key)
+                                logger.info(f"[WARMUP] Skipped existing: {sender}")
+                                continue
+
                             logger.info(f"📩 {sender}: {last_msg[:70]}")
                             inbox.append((sender, last_msg))
 
@@ -415,6 +458,11 @@ def run_cycle():
                     ctx.close()   # ← browser fully closed before API calls
     except TimeoutError as e:
         logger.warning(f"Phase-1 lock timeout: {e}")
+        return
+
+    if warm_up:
+        _save_cache()
+        logger.info(f"✅ Warm-up done — {len(_replied_cache)} messages marked as seen. No replies sent.")
         return
 
     if not inbox:
@@ -497,12 +545,15 @@ def run_cycle():
     except TimeoutError as e:
         logger.warning(f"Phase-3 lock timeout: {e}")
 
+    _save_cache()
+
     if len(_replied_cache) > 500:
         _replied_cache.clear()
 
 
 # ── Main loop ────────────────────────────────────────────────────────────────
 def run():
+    global _warmed_up
     from cloud_agent.src.command_router import ADMIN_PHONES
     logger.info("🤖 WhatsApp Watcher started (Platinum Tier)")
     logger.info(f"Poll: {POLL_INTERVAL}s | Chats: {CHATS_TO_CHECK} | Headless: {HEADLESS} | Admin phones: {len(ADMIN_PHONES)} configured | Notify: {ADMIN_NUMBER or 'not set'}")
@@ -511,9 +562,19 @@ def run():
         logger.warning("ENABLE_WHATSAPP_WATCHER=false — set to true in .env")
         return
 
+    # Load persisted cache — keeps old entries so we never re-reply after restart
+    _load_cache()
+
     while True:
         try:
-            run_cycle()
+            if not _warmed_up:
+                # First cycle: read all current messages into cache WITHOUT replying.
+                # This ensures we only respond to messages that arrive AFTER startup.
+                logger.info("🔧 Warm-up cycle: reading existing messages (no replies sent)...")
+                run_cycle(warm_up=True)
+                _warmed_up = True
+            else:
+                run_cycle()
         except Exception as e:
             logger.error(f"Unexpected error: {e}")
         time.sleep(POLL_INTERVAL)
