@@ -573,6 +573,12 @@ def _send_vault_whatsapp_drafts(page) -> None:
             shutil.move(str(draft_file), str(wa_failed / draft_file.name))
 
 
+def _has_pending_wa_drafts() -> bool:
+    """Returns True if Approved/WhatsApp/ has unsent vault draft files."""
+    wa_approved = Path(VAULT_PATH) / "Approved" / "WhatsApp"
+    return wa_approved.exists() and any(wa_approved.glob("*.md"))
+
+
 # ── Core cycle ───────────────────────────────────────────────────────────────
 def run_cycle(warm_up: bool = False):
     """
@@ -674,20 +680,26 @@ def run_cycle(warm_up: bool = False):
         logger.info(f"✅ Warm-up done — {len(_replied_cache)} messages marked as seen. No replies sent.")
         return
 
-    if not inbox:
-        return
-
-    # ── Phase 2: Generate replies (no browser, lock released) ─────────────────
     pending: list[tuple[str, str, str]] = []   # (sender, last_msg, reply)
-    for sender, last_msg in inbox:
-        # Check for admin commands FIRST — if matched, skip normal reply
-        cmd_reply = handle_admin_command(sender, last_msg)
-        if cmd_reply is not None:
-            reply = cmd_reply
-        else:
-            reply = generate_reply(sender, last_msg)
-        logger.info(f"💬 {sender} → {reply[:60]}")
-        pending.append((sender, last_msg, reply))
+
+    if not inbox:
+        # No new messages — only proceed to Phase-3 if vault WA drafts need sending.
+        # (Phase-3 row_map building opens ALL chats and marks them as "seen",
+        #  which is why this guard matters: only open browser when necessary.)
+        if not _has_pending_wa_drafts():
+            return
+        logger.info("No new replies — running Phase-3 only to flush vault WA drafts")
+    else:
+        # ── Phase 2: Generate replies (no browser, lock released) ─────────────────
+        for sender, last_msg in inbox:
+            # Check for admin commands FIRST — if matched, skip normal reply
+            cmd_reply = handle_admin_command(sender, last_msg)
+            if cmd_reply is not None:
+                reply = cmd_reply
+            else:
+                reply = generate_reply(sender, last_msg)
+            logger.info(f"💬 {sender} → {reply[:60]}")
+            pending.append((sender, last_msg, reply))
 
     # Give Chrome time to finish flushing the Phase-1 profile to disk.
     # On Oracle Free Tier (slow I/O), opening Chrome too quickly after Phase-1
@@ -711,17 +723,20 @@ def run_cycle(warm_up: bool = False):
                     if not rows:
                         rows = page.locator('#pane-side > div > div > div').all()
 
-                    # Build a name→row index map (first CHATS_TO_CHECK rows)
+                    # Build a name→row index map ONLY when there are pending replies.
+                    # Opening all chats marks them as "seen", removing unread badges
+                    # and causing Phase-1 to skip admin messages on the next cycle.
                     row_map: dict[str, int] = {}
-                    for i, row in enumerate(rows[:CHATS_TO_CHECK]):
-                        try:
-                            _dismiss_dialogs(page)  # clear popup before each click
-                            row.click()
-                            page.wait_for_timeout(2500)  # was 1500 — Oracle Cloud needs more
-                            name = _read_sender(page, i)
-                            row_map[name] = i
-                        except Exception:
-                            pass
+                    if pending:
+                        for i, row in enumerate(rows[:CHATS_TO_CHECK]):
+                            try:
+                                _dismiss_dialogs(page)  # clear popup before each click
+                                row.click()
+                                page.wait_for_timeout(2500)  # was 1500 — Oracle Cloud needs more
+                                name = _read_sender(page, i)
+                                row_map[name] = i
+                            except Exception:
+                                pass
 
                     for sender, last_msg, reply in pending:
                         sent = False
