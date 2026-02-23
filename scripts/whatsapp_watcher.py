@@ -529,6 +529,24 @@ def run_cycle(warm_up: bool = False):
 
                     for i, row in enumerate(rows[:CHATS_TO_CHECK]):
                         try:
+                            # ── Skip chats with no unread badge ───────────────
+                            # Only process chats WhatsApp marks as unread
+                            # (has the green/orange unread count badge).
+                            # During warm_up we still read all to populate cache.
+                            if not warm_up:
+                                unread_sels = [
+                                    'span[data-testid="icon-unread-count"]',
+                                    'span[aria-label*="unread"]',
+                                    'div[aria-label*="unread"]',
+                                    '[data-testid*="unread"]',
+                                ]
+                                has_unread = any(
+                                    row.locator(s).count() > 0 for s in unread_sels
+                                )
+                                if not has_unread:
+                                    logger.debug(f"Chat {i}: no unread badge, skipping")
+                                    continue
+
                             row.click()
                             page.wait_for_timeout(2000)
                             sender   = _read_sender(page, i)
