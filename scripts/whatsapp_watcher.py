@@ -357,7 +357,7 @@ def _wait_for_whatsapp(page) -> bool:
     page.goto("https://web.whatsapp.com", wait_until="domcontentloaded", timeout=40000)
     # Cloud VM (headless) needs more time for JS-heavy WhatsApp Web to initialise
     page.wait_for_timeout(20000 if HEADLESS else 4000)
-    page.wait_for_selector(f'{CHAT_LIST}, {QR_CODE}', timeout=60000)
+    page.wait_for_selector(f'{CHAT_LIST}, {QR_CODE}', timeout=90000)
     # Check any login-required indicator (canvas OR img QR, landing page, phone link)
     # Also check absence of chat list as final fallback (page loaded but no chats = logged out)
     is_login_page = any(
