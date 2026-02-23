@@ -37,8 +37,25 @@ JS_FILL = f'''() => {{
 JS_NEXT = '''() => {
     const candidates = [...document.querySelectorAll("div[role=button],button,[role=link]")];
     const b = candidates.find(x => /^next$/i.test(x.textContent.trim()));
-    if (b) { b.dispatchEvent(new MouseEvent('click',{bubbles:true})); return 'ok'; }
-    return 'nf';
+    if (!b) return 'nf';
+    // Try React fiber onClick first
+    const allKeys = Object.getOwnPropertyNames(b);
+    const fk = allKeys.find(k => k.startsWith('__reactFiber') || k.startsWith('__reactInternalInstance'));
+    if (fk) {
+        let fiber = b[fk];
+        for (let i = 0; i < 30 && fiber; i++) {
+            const props = fiber.memoizedProps || fiber.pendingProps || {};
+            if (typeof props.onClick === 'function') {
+                try {
+                    props.onClick({type:'click',preventDefault:()=>{},stopPropagation:()=>{},nativeEvent:{type:'click'},currentTarget:b,target:b});
+                    return 'ok_fiber';
+                } catch(e) {}
+            }
+            fiber = fiber.return;
+        }
+    }
+    b.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+    return 'ok_native';
 }'''
 
 
@@ -62,34 +79,104 @@ def get_code(page):
     return ''.join(code_chars[:8]), code_chars, txt
 
 
+JS_CLICK_PHONE = """() => {
+    // Strategy 1: Find role=button elements first (more specific), then all divs
+    const keywords = ['Log in with phone number', 'Link with phone number'];
+
+    function tryClick(el, label) {
+        // Try React fiber — check own property names (not just enumerable)
+        const allKeys = Object.getOwnPropertyNames(el);
+        const fiberKey = allKeys.find(k => k.startsWith('__reactFiber') || k.startsWith('__reactInternalInstance'));
+        if (fiberKey) {
+            let fiber = el[fiberKey];
+            for (let i = 0; i < 50 && fiber; i++) {
+                const props = fiber.memoizedProps || fiber.pendingProps || {};
+                // Try onClick, onMouseDown (WhatsApp uses both)
+                for (const handler of ['onClick', 'onMouseDown', 'onPointerDown']) {
+                    if (typeof props[handler] === 'function') {
+                        try {
+                            props[handler]({
+                                type: handler === 'onClick' ? 'click' : handler.slice(2).toLowerCase(),
+                                preventDefault: () => {},
+                                stopPropagation: () => {},
+                                nativeEvent: { type: 'click' },
+                                currentTarget: el,
+                                target: el,
+                            });
+                            return 'fiber_' + handler + ':' + label;
+                        } catch(e) { /* try next handler */ }
+                    }
+                }
+                fiber = fiber.return;
+            }
+        }
+        // Fallback: dispatch full native event sequence (React root listens at document)
+        const opts = { bubbles: true, cancelable: true, view: window };
+        el.dispatchEvent(new PointerEvent('pointerover',  opts));
+        el.dispatchEvent(new PointerEvent('pointerenter', { bubbles: false }));
+        el.dispatchEvent(new MouseEvent('mouseover',  opts));
+        el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: false }));
+        el.dispatchEvent(new PointerEvent('pointerdown', opts));
+        el.dispatchEvent(new MouseEvent('mousedown',  opts));
+        el.dispatchEvent(new PointerEvent('pointerup',   opts));
+        el.dispatchEvent(new MouseEvent('mouseup',    opts));
+        el.dispatchEvent(new MouseEvent('click',      opts));
+        return 'native:' + label;
+    }
+
+    for (const kw of keywords) {
+        // Pass 1: role=button and button elements (most specific)
+        const buttons = [...document.querySelectorAll('div[role=button], button, a[role=button]')];
+        let el = buttons.find(e => e.textContent.trim() === kw || e.textContent.trim().startsWith(kw));
+        if (el) return tryClick(el, kw);
+
+        // Pass 2: any element with exact or prefix text match
+        const all = [...document.querySelectorAll('div, span, a, button')];
+        el = all.find(e => e.textContent.trim() === kw);
+        if (!el) el = all.find(e => e.textContent.trim().startsWith(kw) && e.textContent.trim().length < kw.length + 5);
+        if (el) return tryClick(el, kw);
+    }
+    return 'not_found';
+}"""
+
+
 def click_phone_number_link(page):
-    """Click 'Log in with phone number' using text or aria selectors."""
-    # Try multiple selectors for the phone-number login button
+    """Click 'Log in with phone number': try React fiber JS first, mouse.click fallback."""
+    # ── Step 1: React fiber JS approach (runs FIRST) ──────────────────────────
+    result = page.evaluate(JS_CLICK_PHONE)
+    print(f'JS click result: {result}', flush=True)
+    if result != 'not_found':
+        return True
+
+    # ── Step 2: Playwright locator + real mouse click (fallback) ──────────────
     for selector in [
-        'text="Log in with phone number"',
-        'text="Link with phone number instead"',
-        '[data-testid="link-device-qr-code-companion-phone-number-entry"]',
+        ':text("Log in with phone number")',
+        ':text("Link with phone number instead")',
+        'div[role="button"]:has-text("phone number")',
         'a:has-text("phone number")',
         'button:has-text("phone number")',
-        'div[role="button"]:has-text("phone number")',
-        'span:has-text("Log in with phone number")',
+        '[data-testid*="phone"]',
     ]:
         try:
-            loc = page.locator(selector)
-            if loc.count() > 0:
-                loc.first.click(force=True)
-                print(f'Clicked phone link via: {selector}', flush=True)
+            loc = page.locator(selector).first
+            if loc.count() == 0:
+                continue
+            loc.scroll_into_view_if_needed()
+            time.sleep(0.5)
+            box = loc.bounding_box()
+            if box:
+                cx = box['x'] + box['width'] / 2
+                cy = box['y'] + box['height'] / 2
+                page.mouse.move(cx, cy)
+                time.sleep(0.3)
+                page.mouse.click(cx, cy)
+                print(f'Mouse click at ({cx:.0f},{cy:.0f}) via: {selector}', flush=True)
                 return True
-        except Exception:
+        except Exception as e:
+            print(f'  selector {selector} failed: {e}', flush=True)
             continue
-    # Fallback: look for any element containing "phone number" text
-    try:
-        page.get_by_text('phone number', exact=False).first.click(force=True)
-        print('Clicked phone link via get_by_text fallback', flush=True)
-        return True
-    except Exception as e:
-        print(f'Could not click phone link: {e}', flush=True)
-        return False
+    print('All click methods failed.', flush=True)
+    return False
 
 
 def find_phone_input(page):
@@ -121,10 +208,10 @@ with sync_playwright() as p:
         user_agent=UA, viewport={'width':1920,'height':1080},
     )
     page = ctx.new_page()
+    page.set_default_timeout(90000)   # 90s for all actions (ARM VM is slow)
     print('Loading...', flush=True)
-    page.goto('https://web.whatsapp.com', wait_until='domcontentloaded', timeout=40000)
+    page.goto('https://web.whatsapp.com', wait_until='domcontentloaded', timeout=60000)
     time.sleep(25)
-    page.screenshot(path='/tmp/wa7_0.png')
 
     body = page.locator('body').inner_text()
     print(f'State: {body[:120]}', flush=True)
@@ -157,8 +244,8 @@ with sync_playwright() as p:
     elif 'Steps to log in' in body or 'Scan the QR' in body or 'Scan this QR' in body:
         print('On QR page. Clicking "Log in with phone number"...', flush=True)
         clicked = click_phone_number_link(page)
-        time.sleep(6)
-        page.screenshot(path='/tmp/wa7_1.png')
+        time.sleep(20)   # WhatsApp needs time to animate to phone input (Oracle ARM is slow)
+        pass  # screenshot removed (times out on Oracle ARM)
 
         n = find_phone_input(page)
         print(f'Phone input count: {n}', flush=True)
@@ -170,11 +257,11 @@ with sync_playwright() as p:
             nr = page.evaluate(JS_NEXT)
             print(f'Next result: {nr}', flush=True)
             time.sleep(12)
-            page.screenshot(path='/tmp/wa7_2.png')
+            pass  # screenshot removed (times out on Oracle ARM)
             code, chars, _ = get_code(page)
         else:
             # Take screenshot to debug what we see after clicking
-            page.screenshot(path='/tmp/wa7_phone_fail.png')
+            pass  # screenshot removed (times out on Oracle ARM)
             body2 = page.locator('body').inner_text()
             print(f'Page after click: {body2[:200]}', flush=True)
             print('All inputs on page:', flush=True)
@@ -223,7 +310,7 @@ with sync_playwright() as p:
             time.sleep(2)
             if page.locator('div[aria-label="Chat list"],#pane-side').count() > 0:
                 print(f'AUTH SUCCESS after {(i+1)*2}s!', flush=True)
-                page.screenshot(path='/tmp/wa7_success.png')
+                pass  # screenshot removed (times out on Oracle ARM)
                 import subprocess
                 subprocess.run(['pm2','start',
                                 '/opt/personal-ai-employee/ecosystem.config.js',
@@ -235,6 +322,5 @@ with sync_playwright() as p:
     else:
         print(f'No 8-char code found. code="{code}"', flush=True)
 
-    page.screenshot(path='/tmp/wa7_final.png')
     ctx.close()
 print('Done.', flush=True)
