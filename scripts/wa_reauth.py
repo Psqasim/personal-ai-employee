@@ -14,6 +14,7 @@ JS_FILL = f'''() => {{
     const selectors = [
         '[aria-label="Type your phone number to log in to WhatsApp"]',
         'input[type="tel"]',
+        'input[type="text"]',
         'input[inputmode="tel"]',
         'input[inputmode="numeric"]',
         'input[placeholder*="phone"]',
@@ -194,6 +195,7 @@ def find_phone_input(page):
     selectors = [
         '[aria-label="Type your phone number to log in to WhatsApp"]',
         'input[type="tel"]',
+        'input[type="text"]',
         'input[inputmode="tel"]',
         'input[inputmode="numeric"]',
         'input[placeholder*="phone"]',

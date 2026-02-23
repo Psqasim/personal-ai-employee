@@ -573,6 +573,19 @@ def _send_vault_whatsapp_drafts(page) -> None:
             shutil.move(str(draft_file), str(wa_failed / draft_file.name))
 
 
+def _is_admin_row(row_text: str) -> bool:
+    """Return True if the chat list row belongs to an admin phone number.
+    Used to bypass the unread-badge filter so admin commands are never missed
+    even when Phase-3 has opened the chat (removing the unread badge).
+    """
+    try:
+        from cloud_agent.src.command_router import ADMIN_PHONES
+    except ImportError:
+        return False
+    row_digits = re.sub(r"[^\d]", "", row_text)
+    return any(ap and ap in row_digits for ap in ADMIN_PHONES)
+
+
 def _has_pending_wa_drafts() -> bool:
     """Returns True if Approved/WhatsApp/ has unsent vault draft files."""
     wa_approved = Path(VAULT_PATH) / "Approved" / "WhatsApp"
@@ -618,22 +631,29 @@ def run_cycle(warm_up: bool = False):
                     for i, row in enumerate(rows[:CHATS_TO_CHECK]):
                         try:
                             # ── Skip chats with no unread badge ───────────────
-                            # Only process chats WhatsApp marks as unread
-                            # (has the green/orange unread count badge).
-                            # During warm_up we still read all to populate cache.
+                            # Only process chats WhatsApp marks as unread.
+                            # Exception: admin phone chats are ALWAYS checked —
+                            # Phase-3 opening admin's chat removes the unread badge
+                            # (marks msgs as seen) before Phase-1 can detect them.
                             if not warm_up:
-                                unread_sels = [
-                                    'span[data-testid="icon-unread-count"]',
-                                    'span[aria-label*="unread"]',
-                                    'div[aria-label*="unread"]',
-                                    '[data-testid*="unread"]',
-                                ]
-                                has_unread = any(
-                                    row.locator(s).count() > 0 for s in unread_sels
-                                )
-                                if not has_unread:
-                                    logger.debug(f"Chat {i}: no unread badge, skipping")
-                                    continue
+                                try:
+                                    is_admin = _is_admin_row(row.inner_text())
+                                except Exception:
+                                    is_admin = False
+
+                                if not is_admin:
+                                    unread_sels = [
+                                        'span[data-testid="icon-unread-count"]',
+                                        'span[aria-label*="unread"]',
+                                        'div[aria-label*="unread"]',
+                                        '[data-testid*="unread"]',
+                                    ]
+                                    has_unread = any(
+                                        row.locator(s).count() > 0 for s in unread_sels
+                                    )
+                                    if not has_unread:
+                                        logger.debug(f"Chat {i}: no unread badge, skipping")
+                                        continue
 
                             row.click()
                             page.wait_for_timeout(2000)
