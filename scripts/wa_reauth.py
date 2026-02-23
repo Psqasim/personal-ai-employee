@@ -141,28 +141,39 @@ JS_CLICK_PHONE = """() => {
 
 
 def click_phone_number_link(page):
-    """Click 'Log in with phone number': try React fiber JS first, mouse.click fallback."""
-    # ── Step 1: React fiber JS approach (runs FIRST) ──────────────────────────
+    """Click 'Log in with phone number': JS fiber + trusted Playwright click."""
+    # ── Step 1: React fiber JS (fires React state update) ─────────────────────
     result = page.evaluate(JS_CLICK_PHONE)
     print(f'JS click result: {result}', flush=True)
-    if result != 'not_found':
-        return True
 
-    # ── Step 2: Playwright locator + real mouse click (fallback) ──────────────
+    # ── Step 2: ALWAYS also fire a real Playwright loc.click() ────────────────
+    # loc.click() generates isTrusted=true events (pointerdown+mousedown+click)
+    # WhatsApp checks event.isTrusted — programmatic JS events are blocked.
     for selector in [
         ':text("Log in with phone number")',
         ':text("Link with phone number instead")',
         'div[role="button"]:has-text("phone number")',
         'a:has-text("phone number")',
-        'button:has-text("phone number")',
-        '[data-testid*="phone"]',
     ]:
         try:
             loc = page.locator(selector).first
             if loc.count() == 0:
                 continue
-            loc.scroll_into_view_if_needed()
+            loc.scroll_into_view_if_needed(timeout=5000)
             time.sleep(0.5)
+            loc.click(timeout=8000)   # trusted events: pointerdown→mousedown→click
+            print(f'loc.click() via: {selector}', flush=True)
+            return True
+        except Exception as e:
+            print(f'  {selector}: {e}', flush=True)
+            continue
+
+    # ── Step 3: page.mouse.click fallback ─────────────────────────────────────
+    for selector in [':text("Log in with phone number")', 'div[role="button"]:has-text("phone number")']:
+        try:
+            loc = page.locator(selector).first
+            if loc.count() == 0:
+                continue
             box = loc.bounding_box()
             if box:
                 cx = box['x'] + box['width'] / 2
@@ -170,13 +181,12 @@ def click_phone_number_link(page):
                 page.mouse.move(cx, cy)
                 time.sleep(0.3)
                 page.mouse.click(cx, cy)
-                print(f'Mouse click at ({cx:.0f},{cy:.0f}) via: {selector}', flush=True)
+                print(f'Mouse click at ({cx:.0f},{cy:.0f})', flush=True)
                 return True
         except Exception as e:
-            print(f'  selector {selector} failed: {e}', flush=True)
-            continue
-    print('All click methods failed.', flush=True)
-    return False
+            print(f'  mouse {selector}: {e}', flush=True)
+
+    return result != 'not_found'
 
 
 def find_phone_input(page):
@@ -244,10 +254,19 @@ with sync_playwright() as p:
     elif 'Steps to log in' in body or 'Scan the QR' in body or 'Scan this QR' in body:
         print('On QR page. Clicking "Log in with phone number"...', flush=True)
         clicked = click_phone_number_link(page)
-        time.sleep(20)   # WhatsApp needs time to animate to phone input (Oracle ARM is slow)
-        pass  # screenshot removed (times out on Oracle ARM)
-
-        n = find_phone_input(page)
+        # Poll up to 40s for phone input to appear (ARM VM is slow to render)
+        n = 0
+        for t in range(14):
+            time.sleep(3)
+            n = find_phone_input(page)
+            if n > 0:
+                print(f'Phone input appeared after {(t+1)*3}s', flush=True)
+                break
+            chk = page.locator('body').inner_text()
+            if 'Enter phone' in chk or ('phone number' in chk.lower() and 'Log in with phone' not in chk):
+                print(f'Page changed after {(t+1)*3}s, rechecking input...', flush=True)
+                n = find_phone_input(page)
+                break
         print(f'Phone input count: {n}', flush=True)
 
         if n > 0:
