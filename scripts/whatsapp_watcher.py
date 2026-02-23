@@ -438,10 +438,83 @@ def _parse_vault_frontmatter(file_path: Path) -> dict:
         return {}
 
 
+def _open_chat_by_search(page, phone: str) -> bool:
+    """
+    Open a WhatsApp chat by searching for phone number.
+    Stays on the same loaded page (no full page.goto reload).
+    Returns True if chat was opened and MSG_INPUT is visible.
+    """
+    # Dismiss any open chat/dialog first
+    try:
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(600)
+    except Exception:
+        pass
+    _dismiss_dialogs(page)
+
+    # Click the search icon to open search
+    for sel in [
+        '[data-testid="search-icon"]',
+        'span[data-testid="search"]',
+        'div[aria-label="Search or start new chat"]',
+        '[aria-label="Search"]',
+    ]:
+        loc = page.locator(sel)
+        if loc.count() > 0:
+            try:
+                loc.first.click(timeout=4000)
+                break
+            except Exception:
+                continue
+    page.wait_for_timeout(800)
+
+    # Type phone number in search input
+    typed = False
+    for sel in [
+        'div[data-testid="search-input"] div[contenteditable="true"]',
+        '[aria-label="Search input textbox"]',
+        'div[contenteditable="true"][data-tab="3"]',
+    ]:
+        sinput = page.locator(sel)
+        if sinput.count() > 0:
+            try:
+                sinput.first.click(timeout=3000)
+                page.keyboard.press("Control+a")
+                page.keyboard.press("Delete")
+                page.keyboard.type(phone, delay=40)
+                typed = True
+                break
+            except Exception:
+                continue
+
+    if not typed:
+        return False
+
+    page.wait_for_timeout(3000)  # Wait for search results to load
+
+    # Click the first search result
+    for sel in [
+        '[data-testid="cell-frame-container"]',
+        'div[aria-label^="Chat with"]',
+        'div[role="listitem"]',
+    ]:
+        results = page.locator(sel)
+        if results.count() > 0:
+            try:
+                results.first.click(timeout=4000)
+                page.wait_for_timeout(2000)
+                return True
+            except Exception:
+                continue
+
+    return False
+
+
 def _send_vault_whatsapp_drafts(page) -> None:
     """
     Check vault/Approved/WhatsApp/ for pending send_message drafts and deliver them.
     Called inside the Phase-3 browser session — reuses the already-open WhatsApp page.
+    Uses in-page search (not page.goto) to avoid full page reloads on slow Oracle ARM VM.
     Moves file to Done/ on success, Failed/ on error.
     """
     wa_approved = Path(VAULT_PATH) / "Approved" / "WhatsApp"
@@ -463,33 +536,38 @@ def _send_vault_whatsapp_drafts(page) -> None:
         if fm.get("action") != "send_message":
             continue
 
-        chat_id  = fm.get("chat_id") or fm.get("to", "")
-        body     = fm.get("draft_body", "")
+        chat_id = fm.get("chat_id") or fm.get("to", "")
+        body    = fm.get("draft_body", "")
 
         if not chat_id or not body:
             logger.warning(f"Vault WA draft missing chat_id or body: {draft_file.name}")
             shutil.move(str(draft_file), str(wa_failed / draft_file.name))
             continue
 
-        # Strip non-digits for URL, keep international format (no leading +)
+        # Strip non-digits, keep international format (no leading +)
         phone = re.sub(r"[^\d]", "", chat_id)
 
         try:
             logger.info(f"📤 Vault WA: sending to +{phone}...")
-            # Navigate to WhatsApp send URL — pre-fills message (URL-encode body)
-            encoded_body = urllib.parse.quote(body, safe='')
-            page.goto(f"https://web.whatsapp.com/send?phone={phone}&text={encoded_body}",
-                      wait_until="domcontentloaded", timeout=60000)
-            page.wait_for_timeout(3000)   # Let page settle
-            _dismiss_dialogs(page)        # Dismiss "Continue to chat?" or "Open" dialogs
-            # Wait for message input to confirm chat opened
-            msg_box = page.wait_for_selector(MSG_INPUT, timeout=45000)
-            page.wait_for_timeout(2000)   # Let text pre-fill settle
+
+            # Open chat via in-page search (avoids slow full-page goto on Oracle ARM)
+            if not _open_chat_by_search(page, phone):
+                raise Exception(f"Could not open chat for +{phone} via search")
+
+            _dismiss_dialogs(page)
+
+            # Wait for message input
+            msg_box = page.wait_for_selector(MSG_INPUT, timeout=20000)
             msg_box.click()
+            page.wait_for_timeout(300)
+            msg_box.fill(body)
+            page.wait_for_timeout(500)
             page.keyboard.press("Enter")
             page.wait_for_timeout(2000)
-            logger.info(f"✅ Vault WA sent to +{phone}: {body[:50]}")
+
+            logger.info(f"✅ Vault WA sent to +{phone}: {body[:60]}")
             shutil.move(str(draft_file), str(wa_done / draft_file.name))
+
         except Exception as e:
             logger.warning(f"⚠️ Vault WA send failed for +{phone}: {e}")
             shutil.move(str(draft_file), str(wa_failed / draft_file.name))
