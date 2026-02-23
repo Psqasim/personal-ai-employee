@@ -1,6 +1,6 @@
 # Personal AI Employee — Manual Setup & Operations Guide
 
-> **Last updated:** 2026-02-22
+> **Last updated:** 2026-02-23
 > **Covers:** Local machine setup · Oracle Cloud VM setup · PM2 · WhatsApp watcher · Claude API · Re-auth · Restart / Stop / Troubleshoot
 
 ---
@@ -325,40 +325,55 @@ pm2 startup
 
 ### 4.5 WhatsApp Authentication on Cloud (First Time)
 
-WhatsApp sessions **cannot be transferred** from local to cloud — the cloud VM must authenticate independently using phone number pairing:
+WhatsApp sessions **cannot be transferred** from local to cloud — the cloud VM must authenticate independently using phone number pairing.
+
+`wa_reauth.py` (v8+) automatically:
+- Clears any stale session directory
+- Masks `navigator.webdriver` so WhatsApp doesn't block clicks
+- Fires the React fiber + trusted Playwright events to navigate to phone entry
+- Waits up to 3 minutes for you to enter the code
 
 ```bash
-# On cloud VM, run the reauth script
+# SSH into Oracle VM
+ssh -i ~/.ssh/ssh-key-2026-02-17.key ubuntu@129.151.151.212
+
+# Run directly — simpler than PM2 for a one-shot auth
 cd /opt/personal-ai-employee
-pm2 start scripts/wa_reauth.py \
-  --name wa_auth \
-  --interpreter venv/bin/python \
-  --no-autorestart \
-  --kill-timeout 600000
-
-# Watch the logs — a pairing code will appear
-pm2 logs wa_auth
+venv/bin/python scripts/wa_reauth.py
 ```
 
-**When you see the code:**
+Output will show (~30-45s to load):
 
 ```
+=== WA Pair v8 ===
+Cleared session dir: /home/ubuntu/.whatsapp_session_dir
+Loading...
+JS click result: fiber_onClick:Log in with phone number
+Phone input appeared after 3s
+Fill result: +92 346 0326429
 ==================================================
   PAIRING CODE: XXXX-YYYY
 ==================================================
+On phone:
+  WhatsApp > Linked Devices > Link a Device
+  Tap: Link with phone number instead
+  Enter: XXXX-YYYY
+==================================================
+Waiting 3 min for auth...
+AUTH SUCCESS after 46s!
+whatsapp_watcher started!
 ```
 
 On your phone:
 1. Open **WhatsApp**
 2. Tap **⋮ (3-dot menu)** → **Linked Devices** → **Link a Device**
 3. Tap **"Link with phone number instead"**
-4. Enter the 8-character code (e.g., `XXXX-YYYY`)
-5. The script auto-starts `whatsapp_watcher` on success
+4. Enter the 8-character code within **3 minutes**
+5. The script auto-starts `whatsapp_watcher` on success — done!
 
-```bash
-# Clean up auth helper after success
-pm2 delete wa_auth
-```
+> **Note:** `wa_reauth.py` runs in the foreground. Keep the SSH terminal open until
+> you see `AUTH SUCCESS`. If you lose the terminal, run it again — it will generate
+> a new code.
 
 ---
 
@@ -592,40 +607,57 @@ pm2 stop whatsapp_watcher_local
 
 ### 8.5 Re-authenticate WhatsApp on Cloud
 
-WhatsApp sessions can expire (typically after 14+ days inactive, or if you remove the linked device). When the watcher logs show `QR code` instead of chat list:
+WhatsApp sessions expire when:
+- You haven't used the linked device for **14+ days**
+- You manually remove the linked device in WhatsApp app
+- The browser profile gets corrupted (e.g. Chrome crash mid-session)
+
+**Symptom:** `pm2 logs whatsapp_watcher` shows `Login page shown — session expired`
+
+**Fix (3 commands):**
 
 ```bash
 ssh -i ~/.ssh/ssh-key-2026-02-17.key ubuntu@129.151.151.212
+
 cd /opt/personal-ai-employee
 
-# Stop watcher first (needs exclusive Chrome access)
+# Stop watcher (needs exclusive Chrome access)
 pm2 stop whatsapp_watcher
 
-# Run the reauth helper
-pm2 start scripts/wa_reauth.py \
-  --name wa_auth \
-  --interpreter venv/bin/python \
-  --no-autorestart \
-  --kill-timeout 600000
-
-# Watch for the pairing code (appears after ~45s)
-pm2 logs wa_auth
+# Run reauth — it auto-clears the stale session and gets a fresh code
+venv/bin/python scripts/wa_reauth.py
 ```
+
+The script handles everything automatically:
+1. Clears old session dir (`~/.whatsapp_session_dir`)
+2. Masks `navigator.webdriver` (so WhatsApp doesn't block the click)
+3. Opens WhatsApp Web, clicks "Log in with phone number"
+4. Fills in your phone number and shows the pairing code (~30-45s)
 
 **When `PAIRING CODE: XXXX-YYYY` appears:**
 
 On your phone:
-1. Open WhatsApp
+1. Open **WhatsApp**
 2. **⋮** → **Linked Devices** → **Link a Device**
 3. Tap **"Link with phone number instead"**
-4. Enter the 8-char code within 60 seconds
+4. Enter the 8-character code within **3 minutes**
 
-After success, the script auto-starts `whatsapp_watcher`. Clean up:
+`whatsapp_watcher` starts automatically after `AUTH SUCCESS`. Then save:
 
 ```bash
-pm2 delete wa_auth
 pm2 save
 ```
+
+> **If you see `No 8-char code found`:** Run it again — it's a timing issue.
+> The second run always works because WhatsApp Web loads faster with a warm DNS cache.
+
+#### Why `navigator.webdriver` matters
+
+Playwright (the browser automation library) sets `navigator.webdriver = true` by default.
+WhatsApp Web detects this and silently ignores all click events on the login buttons.
+`wa_reauth.py` v8+ masks this via `--disable-blink-features=AutomationControlled`
+and `ctx.add_init_script("Object.defineProperty(navigator,'webdriver',{get:()=>undefined})")`.
+Without this masking, the phone number button appears but clicking does nothing.
 
 ### 8.6 Re-authenticate WhatsApp on Local (WSL2)
 
@@ -697,13 +729,24 @@ pm2 logs whatsapp_watcher --lines 50
 
 | Log message | Cause | Fix |
 |-------------|-------|-----|
+| `Login page shown — session expired` | Session expired | Re-authenticate (Section 8.5) |
 | `QR code` / `Scan` | Session expired | Re-authenticate (Section 8.5) |
 | `This site can't be reached` | No internet | Check VM network |
-| `Update Chrome` | Wrong user-agent | Check UA spoof in `_make_browser()` |
+| `Update Chrome` / `WhatsApp works with Chrome 85+` | Wrong user-agent | Check UA spoof in `_make_browser()` |
 | `BrowserType.launch: ...lock` | Chrome already open | `pkill chromium` then restart |
 | `Thanks for your message!` | Fallback reply | Check `ANTHROPIC_API_KEY` |
 | `Module 'anthropic' not found` | Not installed | `venv/bin/pip install anthropic` |
 | Killed (exit 137) | Out of memory | Stop other PM2 processes first |
+
+**wa_reauth.py specific issues:**
+
+| Output | Cause | Fix |
+|--------|-------|-----|
+| `JS click result: not_found` | "Log in with phone number" not in DOM | WhatsApp UI changed; check page body output |
+| `Phone input count: 0` + page unchanged | `navigator.webdriver` detected | Ensure v8+ is running (`=== WA Pair v8 ===`) |
+| `No 8-char code found` | Timeout before code rendered | Run script again (second run is faster) |
+| `Phone input count: 0` + page shows phone entry | ARM VM too slow to render input | Already handled: v8 polls up to 40s |
+| `Error: ... 9 zombie processes` | Previous Chrome processes not cleaned | `pkill -9 -f chromium` then run reauth |
 
 ### Chrome Lock Conflict
 
@@ -1004,9 +1047,9 @@ pm2 restart whatsapp_watcher          # WhatsApp only
 
 # ── RE-AUTH WHATSAPP ─────────────────────────────────────
 pm2 stop whatsapp_watcher
-pm2 start scripts/wa_reauth.py --name wa_auth --interpreter venv/bin/python --no-autorestart
-pm2 logs wa_auth   # watch for PAIRING CODE, enter on phone
-pm2 delete wa_auth
+venv/bin/python scripts/wa_reauth.py   # shows PAIRING CODE, enter on phone
+# AUTH SUCCESS auto-starts watcher — then:
+pm2 save
 
 # ── UPDATE CODE ──────────────────────────────────────────
 git pull && pm2 restart all
