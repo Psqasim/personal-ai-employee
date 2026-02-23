@@ -45,6 +45,15 @@ async function sendEmailDirectly(filePath: string): Promise<{ sent: boolean; err
     });
 
     console.log(`Email sent to ${data.to}: ${data.subject}`);
+
+    // Move to Done/ immediately after sending — prevents duplicate send on double-click
+    try {
+      const donePath = fullPath.replace("/Approved/", "/Done/");
+      const doneDir = path.dirname(donePath);
+      if (!fs.existsSync(doneDir)) fs.mkdirSync(doneDir, { recursive: true });
+      if (fs.existsSync(fullPath)) fs.renameSync(fullPath, donePath);
+    } catch (_) { /* non-fatal — email already sent */ }
+
     return { sent: true };
   } catch (err: any) {
     console.error("Email send failed after approve:", err.message);

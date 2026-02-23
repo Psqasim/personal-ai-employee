@@ -195,9 +195,20 @@ def handle_admin_command(sender: str, message: str) -> Optional[str]:
         if action in ("create_draft_invoice", "create_draft_expense", "create_purchase_bill"):
             details = f"\nCustomer/Vendor: {intent.get('customer', intent.get('vendor', '?'))}\nAmount: {intent.get('currency', 'PKR')} {intent.get('amount', 0):,}"
         elif action == "send_email":
-            details = f"\nTo: {intent.get('to', '?')}\nSubject: {intent.get('subject', '?')}"
+            count = intent.get("_recipient_count", 1)
+            recipients = intent.get("recipients") or [intent.get("to", "?")]
+            to_preview = ", ".join(str(r) for r in recipients[:2])
+            if count > 2:
+                to_preview += f" +{count - 2} more"
+            subject_line = f"\nSubject: {intent.get('subject', '?')}"
+            details = f"\nTo: {to_preview} ({count} email{'s' if count > 1 else ''}){subject_line}"
         elif action == "send_message":
-            details = f"\nTo: {intent.get('chat_id', '?')}"
+            count = intent.get("_recipient_count", 1)
+            recipients = intent.get("recipients") or [intent.get("chat_id", "?")]
+            to_preview = ", ".join(str(r) for r in recipients[:2])
+            if count > 2:
+                to_preview += f" +{count - 2} more"
+            details = f"\nTo: {to_preview} ({count} message{'s' if count > 1 else ''})"
         elif action == "create_contact":
             details = f"\nName: {intent.get('customer', intent.get('name', '?'))}"
         elif action == "register_payment":

@@ -103,6 +103,15 @@ OUTPUT: {"action": "create_draft_invoice", "customer": "Ali", "amount": 5000, "c
 
 INPUT: "!email john@test.com Meeting tomorrow at 10am"
 OUTPUT: {"action": "send_email", "to": "john@test.com", "subject": "Meeting Tomorrow", "body": "Hi, just a reminder about our meeting tomorrow at 10am."}
+
+INPUT: "Send emails to ali@gmail.com, bob@gmail.com, carol@gmail.com say you are invited to Iftar party Friday 6pm"
+OUTPUT: {"action": "send_email", "recipients": ["ali@gmail.com", "bob@gmail.com", "carol@gmail.com"], "subject": "You're Invited - Iftar Party Friday 6PM", "body": "Assalamu Alaikum! You are warmly invited to join us for an Iftar party this Friday at 6:00 PM. Looking forward to seeing you!"}
+
+INPUT: "Send WhatsApp message say Good morning to\n1.923011496677\n2.923451754772\n3.923112759356\n4.923491136194"
+OUTPUT: {"action": "send_message", "recipients": ["923011496677", "923451754772", "923112759356", "923491136194"], "body": "Good morning! 🌅 Have a wonderful day!"}
+
+INPUT: "Send message to (923112759356) (923451754772) say Iftar is at 6pm today"
+OUTPUT: {"action": "send_message", "recipients": ["923112759356", "923451754772"], "body": "Assalamu Alaikum! Just a reminder that Iftar is at 6pm today."}
 """.strip()
 
 
@@ -148,6 +157,9 @@ Rules:
 3. If amount has "k" suffix, multiply by 1000 (e.g. "5k" = 5000)
 4. Clean the action prefix (!, /) from the message before extracting
 5. For missing fields, use sensible defaults or empty string ""
+6. If MULTIPLE email addresses mentioned, use "recipients": ["a@b.com", "c@d.com"] (not "to")
+7. If MULTIPLE phone numbers mentioned (numbered list "1.923... 2.923...", parentheses, or comma-separated), use "recipients": ["923...", "923..."] — digits only, no spaces or + signs
+8. Single recipient still uses "to" or "chat_id" as before
 
 Examples:
 {COMMAND_EXAMPLES}
@@ -390,15 +402,22 @@ mcp_server: odoo-mcp
 
     # ── Email ─────────────────────────────────────────────────────────────────
     elif action == "send_email":
-        to      = intent.get("to", "")
+        # Support single (to) and multi-recipient (recipients list)
+        recipients: list = intent.get("recipients") or []
+        if not recipients:
+            single = intent.get("to", "")
+            recipients = [r.strip() for r in single.split(",") if r.strip()] if single else [""]
         subject = intent.get("subject", "Message from Qasim")
         body    = intent.get("body", "")
-        safe_to = to.replace("@", "_at_").replace(".", "_")
-        filename = f"EMAIL_DRAFT_CMD_{safe_to}_{ts}.md"
-        folder   = vault / "Pending_Approval" / "Email"
+        folder  = vault / "Pending_Approval" / "Email"
         folder.mkdir(parents=True, exist_ok=True)
 
-        content = f"""---
+        first_path = None
+        for i, to in enumerate(recipients):
+            to = str(to).strip()
+            safe_to  = to.replace("@", "_at_").replace(".", "_").replace(",", "_").replace(" ", "_")
+            filename = f"EMAIL_DRAFT_CMD_{safe_to}_{ts + i}.md"
+            content  = f"""---
 draft_id: {filename[:-3]}
 action: send_email
 to: "{to}"
@@ -420,24 +439,36 @@ mcp_server: email-mcp
 > Created from command: `{intent.get('raw_command', '')}`
 > Approve to send this email.
 """
-        path = folder / filename
-        path.write_text(content, encoding="utf-8")
-        logger.info(f"📄 Created email draft: {path}")
-        return str(path)
+            path = folder / filename
+            path.write_text(content, encoding="utf-8")
+            logger.info(f"📄 Created email draft: {path}")
+            if first_path is None:
+                first_path = str(path)
+
+        # Store recipients back for confirmation message
+        intent["_recipient_count"] = len(recipients)
+        return first_path or ""
 
     # ── WhatsApp ──────────────────────────────────────────────────────────────
     # Admin commands skip Pending_Approval and go directly to Approved/
-    # so the local agent sends immediately without dashboard review.
+    # so the watcher sends immediately without dashboard review.
     elif action == "send_message":
-        chat_id = intent.get("chat_id", intent.get("to", ""))
-        body    = intent.get("body", "")
-        safe_chat = chat_id.replace(" ", "_")
-        filename  = f"WHATSAPP_DRAFT_CMD_{safe_chat}_{ts}.md"
-        # Write directly to Approved/ — admin already authorized it by sending the command
-        folder    = vault / "Approved" / "WhatsApp"
+        # Support single (chat_id/to) and multi-recipient (recipients list)
+        recipients: list = intent.get("recipients") or []
+        if not recipients:
+            single = intent.get("chat_id", intent.get("to", ""))
+            recipients = [single] if single else []
+
+        body   = intent.get("body", "")
+        folder = vault / "Approved" / "WhatsApp"
         folder.mkdir(parents=True, exist_ok=True)
 
-        content = f"""---
+        first_path = None
+        for i, chat_id in enumerate(recipients):
+            chat_id   = str(chat_id).strip().lstrip("+")
+            safe_chat = chat_id.replace(" ", "_").replace("+", "")
+            filename  = f"WHATSAPP_DRAFT_CMD_{safe_chat}_{ts + i}.md"
+            content   = f"""---
 draft_id: {filename[:-3]}
 action: send_message
 chat_id: "{chat_id}"
@@ -457,10 +488,15 @@ mcp_server: whatsapp-mcp
 
 > Auto-approved admin command: `{intent.get('raw_command', '')}`
 """
-        path = folder / filename
-        path.write_text(content, encoding="utf-8")
-        logger.info(f"📤 Created auto-approved WhatsApp send: {path}")
-        return str(path)
+            path = folder / filename
+            path.write_text(content, encoding="utf-8")
+            logger.info(f"📤 Created auto-approved WhatsApp send to {chat_id}: {path}")
+            if first_path is None:
+                first_path = str(path)
+
+        intent["_recipient_count"] = len(recipients)
+        intent["chat_id"] = recipients[0] if recipients else ""
+        return first_path or ""
 
     # ── LinkedIn ──────────────────────────────────────────────────────────────
     elif action == "create_post":
