@@ -90,10 +90,21 @@ def _load_cache() -> None:
 
 
 def _save_cache() -> None:
-    """Persist reply cache to disk with timestamps."""
+    """Persist reply cache to disk — admin entries excluded so admins can
+    retry the same command after a restart without being blocked by cache."""
     try:
+        try:
+            from cloud_agent.src.command_router import ADMIN_PHONES
+        except Exception:
+            ADMIN_PHONES = set()
+
         now = time.time()
-        data = {k: now for k in _replied_cache}
+        data = {}
+        for k in _replied_cache:
+            sender = k.split(":")[0] if ":" in k else ""
+            sender_digits = re.sub(r"[^\d]", "", sender)[-10:]
+            if sender_digits not in ADMIN_PHONES:
+                data[k] = now
         with open(_CACHE_FILE, "w") as f:
             json.dump(data, f)
     except Exception as e:
