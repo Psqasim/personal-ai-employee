@@ -207,16 +207,30 @@ def find_phone_input(page):
     return 0
 
 
-print('=== WA Pair v7 ===', flush=True)
+print('=== WA Pair v8 ===', flush=True)
+
+# Clear stale session so WhatsApp starts clean (avoids cached bad states)
+import shutil
+if os.path.exists(SESSION):
+    shutil.rmtree(SESSION)
+    print(f'Cleared session dir: {SESSION}', flush=True)
+
+STEALTH_JS = """
+Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+Object.defineProperty(navigator, 'plugins', {get: () => [1,2,3]});
+window.chrome = {runtime: {}};
+"""
 
 with sync_playwright() as p:
     ctx = p.chromium.launch_persistent_context(
         user_data_dir=SESSION, headless=True,
         args=['--no-sandbox','--disable-dev-shm-usage','--disable-gpu',
               '--enable-unsafe-swiftshader','--disable-setuid-sandbox',
-              '--no-first-run','--mute-audio'],
+              '--no-first-run','--mute-audio',
+              '--disable-blink-features=AutomationControlled'],
         user_agent=UA, viewport={'width':1920,'height':1080},
     )
+    ctx.add_init_script(STEALTH_JS)   # mask navigator.webdriver for all pages
     page = ctx.new_page()
     page.set_default_timeout(90000)   # 90s for all actions (ARM VM is slow)
     print('Loading...', flush=True)
