@@ -23,6 +23,7 @@ import fcntl
 import json
 import shutil
 import logging
+import urllib.parse
 from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime
@@ -475,11 +476,14 @@ def _send_vault_whatsapp_drafts(page) -> None:
 
         try:
             logger.info(f"📤 Vault WA: sending to +{phone}...")
-            # Navigate to WhatsApp send URL — pre-fills message
-            page.goto(f"https://web.whatsapp.com/send?phone={phone}&text={body}",
-                      wait_until="domcontentloaded", timeout=30000)
+            # Navigate to WhatsApp send URL — pre-fills message (URL-encode body)
+            encoded_body = urllib.parse.quote(body, safe='')
+            page.goto(f"https://web.whatsapp.com/send?phone={phone}&text={encoded_body}",
+                      wait_until="domcontentloaded", timeout=60000)
+            page.wait_for_timeout(3000)   # Let page settle
+            _dismiss_dialogs(page)        # Dismiss "Continue to chat?" or "Open" dialogs
             # Wait for message input to confirm chat opened
-            msg_box = page.wait_for_selector(MSG_INPUT, timeout=30000)
+            msg_box = page.wait_for_selector(MSG_INPUT, timeout=45000)
             page.wait_for_timeout(2000)   # Let text pre-fill settle
             msg_box.click()
             page.keyboard.press("Enter")
