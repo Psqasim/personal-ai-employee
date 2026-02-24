@@ -80,6 +80,23 @@ def get_code(page):
     return ''.join(code_chars[:8]), code_chars, txt
 
 
+def poll_for_code(page, timeout=45):
+    """Poll for pairing code up to `timeout` seconds (2s intervals). Returns (code, chars, txt)."""
+    for i in range(timeout // 2):
+        code, chars, txt = get_code(page)
+        if len(code) == 8:
+            print(f'Code found after {(i+1)*2}s', flush=True)
+            return code, chars, txt
+        # Also check if page now shows "Enter code on phone" text as a signal
+        body_preview = page.locator('body').inner_text()[:300]
+        if 'Enter code on phone' in body_preview or 'Linking WhatsApp' in body_preview:
+            print(f'Code page detected at {(i+1)*2}s, raw preview: {body_preview[:150]}', flush=True)
+        else:
+            print(f'Waiting for code... {(i+1)*2}s (page: {body_preview[:80].strip()})', flush=True)
+        time.sleep(2)
+    return '', [], ''
+
+
 JS_CLICK_PHONE = """() => {
     // Strategy 1: Find role=button elements first (more specific), then all divs
     const keywords = ['Log in with phone number', 'Link with phone number'];
@@ -291,12 +308,20 @@ with sync_playwright() as p:
             time.sleep(1)
             nr = page.evaluate(JS_NEXT)
             print(f'Next result: {nr}', flush=True)
-            time.sleep(12)
-            pass  # screenshot removed (times out on Oracle ARM)
-            code, chars, _ = get_code(page)
+            # Also try trusted Playwright click on Next button as fallback
+            for next_sel in [':text("Next")', 'div[role="button"]:has-text("Next")', 'button:has-text("Next")']:
+                try:
+                    loc = page.locator(next_sel).first
+                    if loc.count() > 0:
+                        loc.click(timeout=5000)
+                        print(f'Trusted Next click via: {next_sel}', flush=True)
+                        break
+                except Exception as e:
+                    print(f'  Next click {next_sel}: {e}', flush=True)
+            time.sleep(3)  # brief pause before polling
+            code, chars, _ = poll_for_code(page, timeout=45)
         else:
             # Take screenshot to debug what we see after clicking
-            pass  # screenshot removed (times out on Oracle ARM)
             body2 = page.locator('body').inner_text()
             print(f'Page after click: {body2[:200]}', flush=True)
             print('All inputs on page:', flush=True)
@@ -319,8 +344,18 @@ with sync_playwright() as p:
             time.sleep(1)
             nr = page.evaluate(JS_NEXT)
             print(f'Next result: {nr}', flush=True)
-            time.sleep(12)
-            code, chars, _ = get_code(page)
+            # Also try trusted Playwright click on Next button as fallback
+            for next_sel in [':text("Next")', 'div[role="button"]:has-text("Next")', 'button:has-text("Next")']:
+                try:
+                    loc = page.locator(next_sel).first
+                    if loc.count() > 0:
+                        loc.click(timeout=5000)
+                        print(f'Trusted Next click via: {next_sel}', flush=True)
+                        break
+                except Exception as e:
+                    print(f'  Next click {next_sel}: {e}', flush=True)
+            time.sleep(3)  # brief pause before polling
+            code, chars, _ = poll_for_code(page, timeout=45)
         else:
             code = ''
 
