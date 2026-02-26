@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""WA Pair v9 - use text_content() to avoid layout-reflow timeouts on ARM"""
+"""WA Pair v10 - text_content for state, JS innerText + regex for code extract"""
 import time, sys, re, os
 from playwright.sync_api import sync_playwright
 
@@ -72,24 +72,69 @@ def safe_body_text(page, timeout=30000):
             return ''
 
 
+JS_EXTRACT_CODE = """() => {
+    // Strategy 1: find single-char leaf elements after "Enter code on phone"
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
+    let found = false;
+    const chars = [];
+    while (walker.nextNode()) {
+        const el = walker.currentNode;
+        const t = (el.textContent || '').trim();
+        if (!found && (t.includes('Enter code on phone') || t.includes('Linking WhatsApp'))) {
+            found = true;
+            continue;
+        }
+        if (found && el.children.length === 0 && /^[A-Z0-9]$/.test(t)) {
+            chars.push(t);
+            if (chars.length >= 8) break;
+        }
+    }
+    if (chars.length >= 8) return chars.join('');
+
+    // Strategy 2: regex on innerText (line-based, like old inner_text)
+    try {
+        const body = document.body.innerText || '';
+        const lines = body.split('\\n');
+        const chars2 = [];
+        let inCode = false;
+        for (const ln of lines) {
+            const s = ln.trim();
+            if (s.includes('Enter code on phone') || s.includes('Linking WhatsApp')) {
+                inCode = true; continue;
+            }
+            if (inCode) {
+                if (/^[A-Z0-9]$/.test(s)) chars2.push(s);
+                else if (chars2.length >= 8) break;
+                else if (s && s !== '-' && !/^[A-Z0-9]$/.test(s) && chars2.length < 4) inCode = false;
+            }
+        }
+        if (chars2.length >= 8) return chars2.slice(0, 8).join('');
+    } catch(e) {}
+
+    // Strategy 3: regex on raw textContent for 8 consecutive uppercase/digits
+    try {
+        const raw = document.body.textContent || '';
+        const idx = raw.indexOf('Enter code on phone');
+        if (idx > -1) {
+            const after = raw.slice(idx);
+            const m = after.match(/([A-Z0-9])[^A-Z0-9]*([A-Z0-9])[^A-Z0-9]*([A-Z0-9])[^A-Z0-9]*([A-Z0-9])[^A-Z0-9]*([A-Z0-9])[^A-Z0-9]*([A-Z0-9])[^A-Z0-9]*([A-Z0-9])[^A-Z0-9]*([A-Z0-9])/);
+            if (m) return m.slice(1).join('');
+        }
+    } catch(e) {}
+
+    return '';
+}"""
+
+
 def get_code(page):
-    """Extract 8-char pairing code from page body"""
+    """Extract 8-char pairing code from page via in-browser JS (no layout timeout)."""
+    try:
+        code = page.evaluate(JS_EXTRACT_CODE) or ''
+    except Exception as e:
+        print(f'get_code JS error: {e}', flush=True)
+        code = ''
     txt = safe_body_text(page)
-    lines = txt.split('\n')
-    code_chars = []
-    in_code = False
-    for ln in lines:
-        ln = ln.strip()
-        if 'Enter code on phone' in ln or 'Linking WhatsApp' in ln:
-            in_code = True; continue
-        if in_code:
-            if re.match(r'^[A-Z0-9]$', ln):
-                code_chars.append(ln)
-            elif len(code_chars) >= 8:
-                break
-            elif ln and ln != '-' and not re.match(r'^[A-Z0-9]$', ln) and len(code_chars) < 4:
-                in_code = False
-    return ''.join(code_chars[:8]), code_chars, txt
+    return code[:8], list(code[:8]), txt
 
 
 def poll_for_code(page, timeout=45):
@@ -238,7 +283,7 @@ def find_phone_input(page):
     return 0
 
 
-print('=== WA Pair v9 ===', flush=True)
+print('=== WA Pair v10 ===', flush=True)
 
 # Clear stale session so WhatsApp starts clean (avoids cached bad states)
 import shutil
