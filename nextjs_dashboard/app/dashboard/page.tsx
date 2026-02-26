@@ -3,9 +3,13 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
 import { ApprovalCard } from "@/components/ApprovalCard";
 import { VaultBrowser } from "@/components/VaultBrowser";
 import { APIUsageChart } from "@/components/APIUsageChart";
+import { StatsCards } from "@/components/StatsCards";
+import { SkeletonCard, EmptyState } from "@/components/LoadingStates";
+import { GlassCard, GlassCardList, GlassCardItem } from "@/components/GlassCard";
 import { ApprovalItem, VaultSection } from "@/lib/vault";
 
 export default function DashboardPage() {
@@ -16,8 +20,7 @@ export default function DashboardPage() {
   const [counts, setCounts] = useState({ pending: 0, inProgress: 0, approved: 0 });
   const [vaultSections, setVaultSections] = useState<VaultSection[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showChart, setShowChart] = useState(false);
-  const [showVault, setShowVault] = useState(false);
+  const [activeTab, setActiveTab] = useState<"approvals" | "completed" | "usage" | "vault">("approvals");
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/login");
@@ -38,15 +41,14 @@ export default function DashboardPage() {
       setApprovals(data.approvals || []);
       setRecentDone(data.recentDone || []);
       setCounts(data.counts);
-
-      const userRole = (session?.user as any)?.role;
-      if (userRole === "admin") {
+      // Fetch vault sections for the Vault tab
+      try {
         const vaultRes = await fetch("/api/vault");
         if (vaultRes.ok) {
           const vaultData = await vaultRes.json();
-          setVaultSections(vaultData.sections);
+          setVaultSections(vaultData.sections || []);
         }
-      }
+      } catch {}
     } catch (error) {
       console.error("Error fetching status:", error);
     } finally {
@@ -88,11 +90,14 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-24">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent mx-auto" />
-          <p className="mt-3 text-gray-500 dark:text-gray-400 text-sm">Loading...</p>
+      <div className="px-6 py-6 space-y-6">
+        {/* Stats skeleton */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="glass-card rounded-2xl p-6 h-28 skeleton-shimmer" />
+          ))}
         </div>
+        <SkeletonCard count={3} />
       </div>
     );
   }
@@ -102,177 +107,248 @@ export default function DashboardPage() {
   const userRole = (session.user as any).role;
   const isAdmin = userRole === "admin";
 
-  // Viewer gets a read-only status overview (no sensitive approval details)
+  // Viewer gets a read-only status overview
   if (!isAdmin) {
     return (
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      <main className="px-6 py-6 space-y-6">
         <section>
-          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-8 text-center">
-            <div className="text-5xl mb-4">🤖</div>
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">AI Employee is Running</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-              Your AI assistant is actively managing tasks and communications.
-            </p>
-            <div className="flex justify-center gap-6">
-              <div className="text-center">
-                <div className="text-3xl font-bold text-yellow-600 dark:text-yellow-400">{counts.pending}</div>
-                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Pending</div>
-              </div>
-              <div className="w-px bg-gray-200 dark:bg-gray-700" />
-              <div className="text-center">
-                <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">{counts.inProgress}</div>
-                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">In Progress</div>
-              </div>
-              <div className="w-px bg-gray-200 dark:bg-gray-700" />
-              <div className="text-center">
-                <div className="text-3xl font-bold text-green-600 dark:text-green-400">{counts.approved}</div>
-                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Completed</div>
+          <GlassCard>
+            <div className="p-8 text-center">
+              <motion.div
+                className="text-5xl mb-4"
+                animate={{ y: [0, -6, 0] }}
+                transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+              >
+                🤖
+              </motion.div>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+                AI Employee is Running
+              </h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+                Your AI assistant is actively managing tasks and communications.
+              </p>
+              <div className="flex justify-center gap-6">
+                {[
+                  { value: counts.pending, label: "Pending", color: "text-amber-500" },
+                  { value: counts.inProgress, label: "In Progress", color: "text-blue-500" },
+                  { value: counts.approved, label: "Completed", color: "text-emerald-500" },
+                ].map((stat, i) => (
+                  <motion.div
+                    key={stat.label}
+                    className="text-center"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.1 }}
+                  >
+                    <div className={`text-3xl font-bold ${stat.color}`}>{stat.value}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{stat.label}</div>
+                  </motion.div>
+                ))}
               </div>
             </div>
-          </div>
+          </GlassCard>
         </section>
         <div className="text-center">
-          <a
+          <motion.a
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
             href="/dashboard/status"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-sm font-semibold rounded-xl transition-all shadow-lg shadow-blue-500/25"
           >
             🏥 View MCP Health
-          </a>
+          </motion.a>
         </div>
       </main>
     );
   }
 
+  const catIcon: Record<string, string> = {
+    Email: "📧", WhatsApp: "💬", LinkedIn: "🔗", Odoo: "🧾",
+    Facebook: "📘", Instagram: "📸", Twitter: "🐦",
+  };
+
+  const tabs = [
+    { id: "approvals" as const, label: "Pending Approvals", icon: "⏳", count: approvals.length },
+    { id: "completed" as const, label: "Recently Completed", icon: "✅", count: recentDone.length },
+    { id: "usage" as const, label: "API Usage", icon: "📈", count: null },
+    { id: "vault" as const, label: "Vault Browser", icon: "📁", count: null },
+  ];
+
   return (
-    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+    <main className="px-6 py-6 space-y-6">
 
-      {/* ── Pending Approvals (admin only) ────────────────────────────── */}
-      <section>
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-lg font-bold text-gray-900 dark:text-white">Pending Approvals</h2>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              {approvals.length === 0
-                ? "All clear — nothing waiting"
-                : `${approvals.length} item${approvals.length === 1 ? "" : "s"} need your review`}
-            </p>
-          </div>
-          <span className="flex items-center gap-1.5 text-xs text-gray-400">
-            <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-            Live — updates every 5s
-          </span>
-        </div>
+      {/* ── Welcome Header ─────────────────────────────────────────── */}
+      <motion.div
+        initial={{ opacity: 0, y: -8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+      >
+        <h1 className="text-2xl font-extrabold bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500 bg-clip-text text-transparent">
+          Welcome back, {session.user?.name || "Admin"} 👋
+        </h1>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+          Your Personal AI Employee is active and managing tasks
+        </p>
+      </motion.div>
 
-        {approvals.length === 0 ? (
-          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-10 text-center">
-            <div className="text-5xl mb-3">🎉</div>
-            <h3 className="font-semibold text-gray-900 dark:text-white mb-1">All caught up!</h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Your AI employee is working — nothing needs your attention right now.
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4">
-            {approvals.map((item) => (
-              <ApprovalCard
-                key={item.id}
-                item={item}
-                userRole={userRole}
-                onApprove={handleApprove}
-                onReject={handleReject}
+      {/* ── Stats Cards ────────────────────────────────────────────── */}
+      <StatsCards
+        pending={counts.pending}
+        inProgress={counts.inProgress}
+        approved={counts.approved}
+      />
+
+      {/* ── Tab Navigation ─────────────────────────────────────────── */}
+      <div className="flex items-center gap-2 border-b border-gray-200 dark:border-white/[0.06] pb-0">
+        {tabs.map((tab) => (
+          <motion.button
+            key={tab.id}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => setActiveTab(tab.id)}
+            className={`relative flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-t-xl transition-all ${
+              activeTab === tab.id
+                ? "text-blue-600 dark:text-cyan-400 bg-blue-500/5 dark:bg-cyan-500/10"
+                : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/[0.04]"
+            }`}
+          >
+            <span>{tab.icon}</span>
+            <span className="hidden sm:inline">{tab.label}</span>
+            {tab.count !== null && tab.count > 0 && (
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                activeTab === tab.id
+                  ? "bg-blue-500/20 dark:bg-cyan-500/20 text-blue-600 dark:text-cyan-400"
+                  : "bg-gray-200 dark:bg-white/10 text-gray-600 dark:text-gray-400"
+              }`}>
+                {tab.count}
+              </span>
+            )}
+            {activeTab === tab.id && (
+              <motion.div
+                layoutId="tab-underline"
+                className="absolute bottom-0 left-0 right-0 h-[2px] bg-blue-500 dark:bg-cyan-400"
+                transition={{ type: "spring", stiffness: 400, damping: 30 }}
               />
-            ))}
-          </div>
+            )}
+          </motion.button>
+        ))}
+        <span className="ml-auto flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500 px-2">
+          <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+          Live
+        </span>
+      </div>
+
+      {/* ── Tab Content ────────────────────────────────────────────── */}
+      <AnimatePresence mode="wait">
+        {/* ── Pending Approvals Tab ──────────────────────────────────── */}
+        {activeTab === "approvals" && (
+          <motion.section
+            key="approvals"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2 }}
+          >
+            {approvals.length === 0 ? (
+              <EmptyState
+                icon="🎉"
+                title="All caught up!"
+                description="Your AI employee is working — nothing needs your attention right now."
+              />
+            ) : (
+              <GlassCardList className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                {approvals.map((item) => (
+                  <GlassCardItem key={item.id}>
+                    <ApprovalCard
+                      item={item}
+                      userRole={userRole}
+                      onApprove={handleApprove}
+                      onReject={handleReject}
+                    />
+                  </GlassCardItem>
+                ))}
+              </GlassCardList>
+            )}
+          </motion.section>
         )}
-      </section>
 
-      {/* ── Recently Completed (admin only) ───────────────────────────── */}
-      {recentDone.length > 0 && (
-        <section>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-bold text-gray-900 dark:text-white">Recently Completed</h2>
-            <span className="text-xs text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded-full">
-              {recentDone.length} item{recentDone.length !== 1 ? "s" : ""}
-            </span>
-          </div>
-          <div className="space-y-2">
-            {recentDone.map((item) => {
-              const catIcon: Record<string, string> = {
-                Email: "📧", WhatsApp: "💬", LinkedIn: "🔗", Odoo: "🧾",
-                Facebook: "📘", Instagram: "📸", Twitter: "🐦",
-              };
-              const icon = catIcon[item.category] ?? "📄";
-              const isOdoo = item.metadata?.type === "odoo_invoice" || item.metadata?.type === "odoo";
-              return (
-                <div
-                  key={item.id}
-                  className="flex items-center gap-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3"
-                >
-                  <span className="text-xl shrink-0">{icon}</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{item.title}</p>
-                    {isOdoo && item.metadata?.amount && (
-                      <p className="text-xs text-green-600 dark:text-green-400 font-medium">
-                        {item.metadata.currency ?? "USD"} {item.metadata.amount} · {item.metadata.customer}
-                      </p>
-                    )}
-                    <p className="text-xs text-gray-400 dark:text-gray-500">
-                      {new Date(item.timestamp).toLocaleString()}
-                    </p>
-                  </div>
-                  <span className="shrink-0 text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-0.5 rounded-full font-medium">
-                    Done
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
-      {/* ── API Usage Chart (admin only, collapsible) ─────────────────── */}
-      <section>
-        <button
-          onClick={() => setShowChart(!showChart)}
-          className="w-full flex items-center justify-between bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-5 py-3.5 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group"
-        >
-          <div className="flex items-center gap-2">
-            <span className="text-base">📈</span>
-            <span className="font-semibold text-gray-900 dark:text-white text-sm">API Usage & Cost</span>
-            <span className="text-xs text-gray-400">Last 7 days</span>
-          </div>
-          <span className="text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-200 transition-colors text-sm">
-            {showChart ? "▲ Collapse" : "▼ Expand"}
-          </span>
-        </button>
-        {showChart && (
-          <div className="mt-2">
-            <APIUsageChart />
-          </div>
+        {/* ── Recently Completed Tab ─────────────────────────────────── */}
+        {activeTab === "completed" && (
+          <motion.section
+            key="completed"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2 }}
+          >
+            {recentDone.length === 0 ? (
+              <EmptyState
+                icon="📭"
+                title="No completed items"
+                description="Completed tasks will appear here."
+              />
+            ) : (
+              <GlassCardList className="space-y-2">
+                {recentDone.map((item) => {
+                  const icon = catIcon[item.category] ?? "📄";
+                  const isOdoo = item.metadata?.type === "odoo_invoice" || item.metadata?.type === "odoo";
+                  return (
+                    <GlassCardItem key={item.id}>
+                      <div className="flex items-center gap-3 glass-card rounded-xl px-4 py-3 hover:shadow-lg hover:shadow-emerald-500/5 transition-shadow duration-300">
+                        <span className="text-xl shrink-0">{icon}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                            {item.title}
+                          </p>
+                          {isOdoo && item.metadata?.amount && (
+                            <p className="text-xs text-emerald-500 font-medium">
+                              {item.metadata.currency ?? "USD"} {item.metadata.amount} · {item.metadata.customer}
+                            </p>
+                          )}
+                          <p className="text-xs text-gray-400 dark:text-gray-500">
+                            {new Date(item.timestamp).toLocaleString()}
+                          </p>
+                        </div>
+                        <span className="shrink-0 text-xs bg-emerald-500/10 text-emerald-500 px-2.5 py-1 rounded-full font-semibold border border-emerald-500/20">
+                          Done
+                        </span>
+                      </div>
+                    </GlassCardItem>
+                  );
+                })}
+              </GlassCardList>
+            )}
+          </motion.section>
         )}
-      </section>
 
-      {/* ── Vault Browser (admin only, collapsible) ────────────────────── */}
-      <section>
-        <button
-          onClick={() => setShowVault(!showVault)}
-          className="w-full flex items-center justify-between bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-5 py-3.5 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group"
-        >
-          <div className="flex items-center gap-2">
-            <span className="text-base">📁</span>
-            <span className="font-semibold text-gray-900 dark:text-white text-sm">Vault Browser</span>
-            <span className="text-xs text-gray-400">Admin only</span>
-          </div>
-          <span className="text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-200 transition-colors text-sm">
-            {showVault ? "▲ Collapse" : "▼ Expand"}
-          </span>
-        </button>
-        {showVault && vaultSections.length > 0 && (
-          <div className="mt-2">
+        {/* ── API Usage Tab ──────────────────────────────────────────── */}
+        {activeTab === "usage" && (
+          <motion.section
+            key="usage"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2 }}
+          >
+            <div className="glass-card rounded-2xl p-5">
+              <APIUsageChart />
+            </div>
+          </motion.section>
+        )}
+
+        {/* ── Vault Browser Tab ────────────────────────────────────────── */}
+        {activeTab === "vault" && (
+          <motion.section
+            key="vault"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2 }}
+          >
             <VaultBrowser sections={vaultSections} onRefresh={fetchStatus} />
-          </div>
+          </motion.section>
         )}
-      </section>
+      </AnimatePresence>
 
     </main>
   );

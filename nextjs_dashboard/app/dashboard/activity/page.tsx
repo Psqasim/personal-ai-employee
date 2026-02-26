@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import { motion } from "framer-motion";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
+import { GlassSpinner } from "@/components/LoadingStates";
 
 export default function ActivityPage() {
   const { data: session } = useSession();
@@ -10,7 +12,6 @@ export default function ActivityPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Load real vault watcher logs if available, else show demo
     const mockActivities = [
       {
         timestamp: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
@@ -44,21 +45,73 @@ export default function ActivityPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-24">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent" />
+        <GlassSpinner size={56} />
       </div>
     );
   }
 
   return (
-    <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-      <div className="flex items-center justify-between mb-6">
+    <main className="px-6 py-6 space-y-6">
+
+      {/* ── Header ───────────────────────────────────────────────────── */}
+      <motion.div
+        initial={{ opacity: 0, y: -8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+        className="flex items-start justify-between gap-4"
+      >
         <div>
-          <h2 className="text-lg font-bold text-gray-900 dark:text-white">Activity Log</h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Recent AI employee actions</p>
+          <h1 className="text-2xl font-extrabold bg-gradient-to-r from-violet-400 via-purple-500 to-fuchsia-500 bg-clip-text text-transparent">
+            Activity Log
+          </h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            Recent AI employee actions and events
+          </p>
         </div>
-        <span className="text-xs text-gray-400">Last 24 hours</span>
-      </div>
-      <ActivityTimeline activities={activities} />
+        <motion.span
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.15 }}
+          className="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500 glass-card px-4 py-2 rounded-full shrink-0"
+        >
+          <span className="w-1.5 h-1.5 bg-violet-500 rounded-full animate-pulse shadow-lg shadow-violet-500/50" />
+          Last 24 hours
+        </motion.span>
+      </motion.div>
+
+      {/* ── Stats Bar ────────────────────────────────────────────────── */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1, duration: 0.4 }}
+        className="flex items-center gap-3 flex-wrap"
+      >
+        {[
+          { label: "Total Actions", value: activities.length, color: "text-violet-400" },
+          { label: "Cloud Agent", value: activities.filter(a => a.agent === "Cloud").length, color: "text-cyan-400" },
+          { label: "Local Agent", value: activities.filter(a => a.agent === "Local").length, color: "text-amber-400" },
+        ].map((stat, i) => (
+          <motion.div
+            key={stat.label}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 + i * 0.05 }}
+            className="glass-card rounded-xl px-4 py-2.5 flex items-center gap-3"
+          >
+            <span className={`text-lg font-bold ${stat.color}`}>{stat.value}</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">{stat.label}</span>
+          </motion.div>
+        ))}
+      </motion.div>
+
+      {/* ── Timeline ─────────────────────────────────────────────────── */}
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2, duration: 0.4 }}
+      >
+        <ActivityTimeline activities={activities} />
+      </motion.div>
     </main>
   );
 }

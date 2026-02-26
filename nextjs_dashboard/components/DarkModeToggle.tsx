@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 
 export function DarkModeToggle() {
   const [isDark, setIsDark] = useState(false);
@@ -25,17 +26,39 @@ export function DarkModeToggle() {
   if (!mounted) return null;
 
   return (
-    <button
+    <motion.button
+      whileHover={{ scale: 1.05 }}
+      whileTap={{ scale: 0.95 }}
       onClick={toggle}
       aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
-      className="w-10 h-10 flex items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-200 border border-gray-200 dark:border-gray-600"
+      className="w-10 h-10 flex items-center justify-center rounded-xl glass-card transition-all duration-200"
       title={isDark ? "Light mode" : "Dark mode"}
     >
-      {isDark ? (
-        <span className="text-xl">☀️</span>
-      ) : (
-        <span className="text-xl">🌙</span>
-      )}
-    </button>
+      <AnimatePresence mode="wait">
+        {isDark ? (
+          <motion.span
+            key="sun"
+            initial={{ rotate: -90, scale: 0 }}
+            animate={{ rotate: 0, scale: 1 }}
+            exit={{ rotate: 90, scale: 0 }}
+            transition={{ duration: 0.2 }}
+            className="text-xl"
+          >
+            ☀️
+          </motion.span>
+        ) : (
+          <motion.span
+            key="moon"
+            initial={{ rotate: 90, scale: 0 }}
+            animate={{ rotate: 0, scale: 1 }}
+            exit={{ rotate: -90, scale: 0 }}
+            transition={{ duration: 0.2 }}
+            className="text-xl"
+          >
+            🌙
+          </motion.span>
+        )}
+      </AnimatePresence>
+    </motion.button>
   );
 }

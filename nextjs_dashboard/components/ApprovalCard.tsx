@@ -1,7 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
+import { motion, AnimatePresence } from "framer-motion";
 import { ApprovalItem } from "@/lib/vault";
+import { AnimatedModal } from "./AnimatedLayout";
+
+const Tilt = dynamic(() => import("react-parallax-tilt"), { ssr: false });
 
 interface ApprovalCardProps {
   item: ApprovalItem;
@@ -41,10 +46,8 @@ export function ApprovalCard({ item, userRole, onApprove, onReject }: ApprovalCa
     setSendStatus("sending");
     setSendError("");
 
-    // First approve (move file to Approved/)
     await onApprove?.(item.filePath);
 
-    // Then send via WhatsApp
     try {
       const res = await fetch("/api/whatsapp/send", {
         method: "POST",
@@ -74,140 +77,203 @@ export function ApprovalCard({ item, userRole, onApprove, onReject }: ApprovalCa
     setRejectReason("");
   };
 
-  const categoryColors: Record<string, string> = {
-    Email: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
-    LinkedIn: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200",
-    Odoo: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
-    WhatsApp: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
-    Facebook: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
-    Instagram: "bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-200",
-    Twitter: "bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-200",
+  const categoryConfig: Record<string, { color: string; glow: string }> = {
+    Email: {
+      color: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+      glow: "rgba(59, 130, 246, 0.1)",
+    },
+    LinkedIn: {
+      color: "bg-indigo-500/10 text-indigo-400 border-indigo-500/20",
+      glow: "rgba(99, 102, 241, 0.1)",
+    },
+    Odoo: {
+      color: "bg-purple-500/10 text-purple-400 border-purple-500/20",
+      glow: "rgba(168, 85, 247, 0.1)",
+    },
+    WhatsApp: {
+      color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+      glow: "rgba(16, 185, 129, 0.1)",
+    },
+    Facebook: {
+      color: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+      glow: "rgba(59, 130, 246, 0.1)",
+    },
+    Instagram: {
+      color: "bg-pink-500/10 text-pink-400 border-pink-500/20",
+      glow: "rgba(236, 72, 153, 0.1)",
+    },
+    Twitter: {
+      color: "bg-sky-500/10 text-sky-400 border-sky-500/20",
+      glow: "rgba(14, 165, 233, 0.1)",
+    },
+  };
+
+  const catStyle = categoryConfig[item.category] || {
+    color: "bg-gray-500/10 text-gray-400 border-gray-500/20",
+    glow: "rgba(107, 114, 128, 0.1)",
   };
 
   return (
     <>
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 border border-gray-200 dark:border-gray-700">
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex-1">
-            <div className="flex items-center gap-2 mb-2">
-              <span
-                className={`text-xs font-semibold px-2.5 py-0.5 rounded ${
-                  categoryColors[item.category] || "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200"
-                }`}
-              >
-                {item.category}
-              </span>
-              <span className="text-xs text-gray-500 dark:text-gray-400">
-                {new Date(item.timestamp).toLocaleString()}
-              </span>
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-              {item.title}
-            </h3>
-          </div>
-        </div>
-
-        <div className="mb-4">
-          <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-3">
-            {item.preview}
-          </p>
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="text-sm text-blue-600 dark:text-blue-400 hover:underline mt-2"
-          >
-            {expanded ? "Show less" : "Show more"}
-          </button>
-        </div>
-
-        {expanded && (
-          <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-700">
-            <pre className="text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
-              {item.content}
-            </pre>
-          </div>
-        )}
-
-        {userRole === "admin" && (
-          <div className="flex flex-col gap-2">
-            <div className="flex gap-3">
-              {isWhatsApp ? (
-                <button
-                  onClick={handleApproveAndSend}
-                  disabled={loading || sendStatus === "sent"}
-                  className="flex-1 min-h-[44px] bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      <Tilt
+        tiltMaxAngleX={3}
+        tiltMaxAngleY={3}
+        glareEnable={true}
+        glareMaxOpacity={0.05}
+        glareColor="#ffffff"
+        glarePosition="all"
+        perspective={1000}
+        transitionSpeed={400}
+        scale={1.01}
+      >
+        <div
+          className="glass-card rounded-2xl p-6 transition-all duration-300"
+          style={{ boxShadow: `0 4px 24px ${catStyle.glow}` }}
+        >
+          <div className="flex items-start justify-between mb-4">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-2">
+                <span
+                  className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border ${catStyle.color}`}
                 >
-                  {sendStatus === "sending"
-                    ? "Sending..."
-                    : sendStatus === "sent"
-                    ? "✓ Sent!"
-                    : "✓ Approve & Send"}
-                </button>
-              ) : (
-                <button
-                  onClick={handleApprove}
+                  {item.category}
+                </span>
+                <span className="text-xs text-gray-500 dark:text-gray-500">
+                  {new Date(item.timestamp).toLocaleString()}
+                </span>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                {item.title}
+              </h3>
+            </div>
+          </div>
+
+          <div className="mb-4">
+            <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-3">
+              {item.preview}
+            </p>
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="text-sm text-cyan-600 dark:text-cyan-400 hover:text-cyan-500 dark:hover:text-cyan-300 mt-2 transition-colors"
+            >
+              {expanded ? "Show less" : "Show more"}
+            </button>
+          </div>
+
+          <AnimatePresence>
+            {expanded && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.25 }}
+                className="overflow-hidden"
+              >
+                <div className="mb-4 p-4 rounded-xl bg-black/5 dark:bg-white/5 border border-gray-200/50 dark:border-white/5">
+                  <pre className="text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                    {item.content}
+                  </pre>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {userRole === "admin" && (
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-3">
+                {isWhatsApp ? (
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleApproveAndSend}
+                    disabled={loading || sendStatus === "sent"}
+                    className="flex-1 min-h-[44px] bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-medium py-2 px-4 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-green-500/20"
+                  >
+                    {sendStatus === "sending"
+                      ? "Sending..."
+                      : sendStatus === "sent"
+                        ? "Sent!"
+                        : "Approve & Send"}
+                  </motion.button>
+                ) : (
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleApprove}
+                    disabled={loading}
+                    className="flex-1 min-h-[44px] bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-medium py-2 px-4 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-green-500/20"
+                  >
+                    {loading ? "Processing..." : "Approve"}
+                  </motion.button>
+                )}
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => setShowRejectModal(true)}
                   disabled={loading}
-                  className="flex-1 min-h-[44px] bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 min-h-[44px] bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white font-medium py-2 px-4 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-red-500/20"
                 >
-                  {loading ? "Processing..." : "✓ Approve"}
-                </button>
+                  Reject
+                </motion.button>
+              </div>
+              {sendStatus === "error" && sendError && (
+                <p className="text-xs text-red-400">{sendError}</p>
               )}
-              <button
-                onClick={() => setShowRejectModal(true)}
-                disabled={loading}
-                className="flex-1 min-h-[44px] bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                ✗ Reject
-              </button>
+              {sendStatus === "sent" && (
+                <motion.p
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="text-xs text-emerald-400"
+                >
+                  Message sent via WhatsApp
+                </motion.p>
+              )}
             </div>
-            {sendStatus === "error" && sendError && (
-              <p className="text-xs text-red-600 dark:text-red-400">{sendError}</p>
-            )}
-            {sendStatus === "sent" && (
-              <p className="text-xs text-green-600 dark:text-green-400">Message sent via WhatsApp</p>
-            )}
-          </div>
-        )}
+          )}
 
-        {userRole === "viewer" && (
-          <div className="text-center text-sm text-gray-500 dark:text-gray-400 py-2">
-            Read-only access - contact admin to approve
-          </div>
-        )}
-      </div>
+          {userRole === "viewer" && (
+            <div className="text-center text-sm text-gray-500 dark:text-gray-500 py-2">
+              Read-only access — contact admin to approve
+            </div>
+          )}
+        </div>
+      </Tilt>
 
       {/* Reject Modal */}
-      {showRejectModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full">
-            <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">
-              Reject Item
-            </h3>
-            <textarea
-              value={rejectReason}
-              onChange={(e) => setRejectReason(e.target.value)}
-              placeholder="Optional: Reason for rejection..."
-              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white mb-4"
-              rows={4}
-            />
-            <div className="flex gap-3">
-              <button
-                onClick={handleReject}
-                disabled={loading}
-                className="flex-1 bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50"
-              >
-                Confirm Reject
-              </button>
-              <button
-                onClick={() => setShowRejectModal(false)}
-                disabled={loading}
-                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50"
-              >
-                Cancel
-              </button>
-            </div>
+      <AnimatedModal isOpen={showRejectModal} onClose={() => setShowRejectModal(false)}>
+        <div className="glass-card rounded-2xl p-6 max-w-md mx-auto">
+          <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">
+            Reject Item
+          </h3>
+          <textarea
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            placeholder="Optional: Reason for rejection..."
+            className="w-full p-3 rounded-xl bg-black/5 dark:bg-white/5 border border-gray-200/50 dark:border-white/10 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 transition-all mb-4"
+            rows={4}
+          />
+          <div className="flex gap-3">
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={handleReject}
+              disabled={loading}
+              className="flex-1 bg-gradient-to-r from-red-500 to-rose-600 text-white font-medium py-2 px-4 rounded-xl transition-all disabled:opacity-50 shadow-lg shadow-red-500/20"
+            >
+              Confirm Reject
+            </motion.button>
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => setShowRejectModal(false)}
+              disabled={loading}
+              className="flex-1 bg-gray-500/20 hover:bg-gray-500/30 text-gray-700 dark:text-gray-300 font-medium py-2 px-4 rounded-xl transition-all disabled:opacity-50"
+            >
+              Cancel
+            </motion.button>
           </div>
         </div>
-      )}
+      </AnimatedModal>
     </>
   );
 }

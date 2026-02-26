@@ -30,6 +30,19 @@ sys.path.insert(0, str(project_root))
 
 logger = logging.getLogger(__name__)
 
+
+def _yaml_safe(value: str) -> str:
+    """Escape a string for safe inclusion in YAML double-quoted values.
+
+    Replaces internal double-quotes with escaped quotes and wraps in double
+    quotes so that values like:  "Indeed, with hardship comes ease."
+    don't produce invalid YAML:  draft_body: ""Indeed..."  (broken)
+    Instead produces:            draft_body: "\"Indeed..."  (valid)
+    Also collapses multi-line text into a single line.
+    """
+    v = value.replace("\n", "\\n").replace('"', '\\"')
+    return f'"{v}"'
+
 # ── Admin detection ───────────────────────────────────────────────────────────
 # Phone numbers that can issue admin commands (comma-separated in env var)
 # e.g. WHATSAPP_ADMIN_PHONES=+923010832227,+923460326429
@@ -231,11 +244,11 @@ def create_vault_draft(intent: Dict[str, Any], vault_path: Optional[str] = None)
         content = f"""---
 draft_id: {filename[:-3]}
 action: create_draft_invoice
-customer: "{customer}"
-customer_email: "{email}"
+customer: {_yaml_safe(customer)}
+customer_email: {_yaml_safe(email)}
 amount: {amount}
 currency: {currency}
-description: "{desc}"
+description: {_yaml_safe(desc)}
 status: pending_approval
 created: {now_iso}
 source: command_router
@@ -270,10 +283,10 @@ mcp_server: odoo-mcp
         content = f"""---
 draft_id: {filename[:-3]}
 action: create_draft_expense
-customer: "{customer}"
+customer: {_yaml_safe(customer)}
 amount: {amount}
 currency: {currency}
-description: "{desc}"
+description: {_yaml_safe(desc)}
 status: pending_approval
 created: {now_iso}
 source: command_router
@@ -307,9 +320,9 @@ mcp_server: odoo-mcp
         content = f"""---
 draft_id: {filename[:-3]}
 action: create_contact
-name: "{name}"
-email: "{email}"
-phone: "{phone}"
+name: {_yaml_safe(name)}
+email: {_yaml_safe(email)}
+phone: {_yaml_safe(phone)}
 status: pending_approval
 created: {now_iso}
 source: command_router
@@ -341,7 +354,7 @@ mcp_server: odoo-mcp
         content = f"""---
 draft_id: {filename[:-3]}
 action: register_payment
-invoice_number: "{invoice_num}"
+invoice_number: {_yaml_safe(invoice_num)}
 amount: {amount}
 status: pending_approval
 created: {now_iso}
@@ -376,10 +389,10 @@ mcp_server: odoo-mcp
         content = f"""---
 draft_id: {filename[:-3]}
 action: create_purchase_bill
-vendor: "{vendor}"
+vendor: {_yaml_safe(vendor)}
 amount: {amount}
 currency: {currency}
-description: "{desc}"
+description: {_yaml_safe(desc)}
 status: pending_approval
 created: {now_iso}
 source: command_router
@@ -421,8 +434,8 @@ mcp_server: odoo-mcp
 draft_id: {filename[:-3]}
 action: send_email
 to: "{to}"
-subject: "{subject}"
-draft_body: "{body}"
+subject: {_yaml_safe(subject)}
+draft_body: {_yaml_safe(body)}
 status: pending_approval
 generated_at: {now_iso}
 source: command_router
@@ -473,7 +486,7 @@ draft_id: {filename[:-3]}
 action: send_message
 chat_id: "{chat_id}"
 to: "{chat_id}"
-draft_body: "{body}"
+draft_body: {_yaml_safe(body)}
 status: approved
 generated_at: {now_iso}
 source: command_router
@@ -509,7 +522,7 @@ mcp_server: whatsapp-mcp
         content = f"""---
 draft_id: {filename[:-3]}
 action: create_post
-post_content: "{post_content}"
+post_content: {_yaml_safe(post_content)}
 character_count: {char_count}
 scheduled_date: "{datetime.now().strftime('%Y-%m-%d')}"
 business_goal_reference: "command_router"

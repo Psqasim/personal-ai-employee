@@ -282,9 +282,23 @@ export function getAllVaultSections(): VaultSection[] {
       items: [],
     },
     {
+      name: "Pending Approval",
+      path: "Pending_Approval",
+      icon: "📋",
+      count: 0,
+      items: [],
+    },
+    {
       name: "Rejected",
       path: "Rejected",
       icon: "❌",
+      count: 0,
+      items: [],
+    },
+    {
+      name: "Failed",
+      path: "Failed",
+      icon: "💥",
       count: 0,
       items: [],
     },

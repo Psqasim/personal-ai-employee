@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import Anthropic from "@anthropic-ai/sdk";
+import { logApiUsage } from "@/lib/api-usage-log";
 import axios from "axios";
 import https from "https";
 
 // Force IPv4 — WSL2 Node.js gets AggregateError when IPv6 + IPv4 both attempted
 const ipv4Agent = new https.Agent({ family: 4 });
 
-const anthropic = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
+const anthropic = new Anthropic({
+  apiKey: process.env.CLAUDE_API_KEY,
+  timeout: 30_000,
+});
+const FAST_MODEL = "claude-haiku-4-5-20251001";
 
 const LI_TOKEN = process.env.LINKEDIN_ACCESS_TOKEN!;
 const LI_URN   = process.env.LINKEDIN_AUTHOR_URN!;
@@ -26,7 +31,7 @@ function liHeaders(extra: Record<string, string> = {}) {
 // ── Generate post text with Claude ──────────────────────────────────────────
 async function generatePostText(topic: string): Promise<string> {
   const msg = await anthropic.messages.create({
-    model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
+    model: FAST_MODEL,
     max_tokens: 600,
     messages: [
       {
@@ -48,6 +53,7 @@ Return ONLY the post text, no extra commentary.`,
     ],
   });
 
+  logApiUsage(msg.usage, FAST_MODEL);
   let text = msg.content[0].type === "text" ? msg.content[0].text : "";
   // Strip any preamble Claude sometimes adds before the actual post
   text = text.replace(/^(here'?s?\s+(your\s+)?linkedin\s+post[:\s\-—]*\n*)/i, "").trim();

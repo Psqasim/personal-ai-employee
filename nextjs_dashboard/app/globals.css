@@ -1,21 +1,73 @@
 @import "tailwindcss";
+@import "../styles/animations.css";
 
 /* Tailwind v4: enable class-based dark mode */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ══════════════════════════════════════════════════════════════════════════
+   2026 Neon Glass Dashboard Design System
+   ══════════════════════════════════════════════════════════════════════════ */
+
 :root {
-  --background: #ffffff;
+  --background: #f0f2f5;
   --foreground: #171717;
+  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-border: rgba(255, 255, 255, 0.5);
+  --accent: #0066ff;
+  --accent-glow: rgba(0, 102, 255, 0.15);
+  --neon-cyan: #0066ff;
+  --neon-purple: #7c3aed;
+  --sidebar-width: 260px;
 }
 
 .dark {
-  --background: #0a0a0a;
-  --foreground: #ededed;
+  --background: #060611;
+  --foreground: #e8eaed;
+  --glass-bg: rgba(8, 8, 24, 0.6);
+  --glass-border: rgba(0, 240, 255, 0.08);
+  --accent: #00f0ff;
+  --accent-glow: rgba(0, 240, 255, 0.15);
+  --neon-cyan: #00f0ff;
+  --neon-purple: #a855f7;
+  --sidebar-width: 260px;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-  transition: background-color 0.2s ease, color 0.2s ease;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter",
+    "Segoe UI", system-ui, sans-serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+}
+
+/* ── Dark mode gradient mesh background ──────────────────────────────── */
+.dark body {
+  background:
+    radial-gradient(ellipse 80% 60% at 10% 0%, rgba(0, 240, 255, 0.07) 0%, transparent 50%),
+    radial-gradient(ellipse 60% 80% at 90% 10%, rgba(168, 85, 247, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse 70% 50% at 50% 100%, rgba(0, 240, 255, 0.04) 0%, transparent 50%),
+    radial-gradient(ellipse 50% 70% at 80% 80%, rgba(168, 85, 247, 0.05) 0%, transparent 50%),
+    linear-gradient(180deg, #060611 0%, #0a0a1a 50%, #060611 100%);
+}
+
+/* ── Light mode clean gradient ───────────────────────────────────────── */
+:root body {
+  background:
+    radial-gradient(ellipse 80% 50% at 20% 0%, rgba(0, 102, 255, 0.04) 0%, transparent 50%),
+    radial-gradient(ellipse 60% 60% at 80% 100%, rgba(124, 58, 237, 0.03) 0%, transparent 50%),
+    #f0f2f5;
+}
+
+/* ── Selection color ──────────────────────────────────────────────────── */
+::selection {
+  background: rgba(0, 102, 255, 0.2);
+  color: inherit;
+}
+
+.dark ::selection {
+  background: rgba(0, 240, 255, 0.25);
+  color: #ffffff;
 }

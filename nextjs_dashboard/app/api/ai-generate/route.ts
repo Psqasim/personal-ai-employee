@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import Anthropic from "@anthropic-ai/sdk";
+import { logApiUsage } from "@/lib/api-usage-log";
 
-const anthropic = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
-const MODEL = process.env.CLAUDE_MODEL || "claude-sonnet-4-6";
+const anthropic = new Anthropic({
+  apiKey: process.env.CLAUDE_API_KEY,
+  timeout: 30_000, // 30s timeout for fast generation
+});
+// Use Haiku for Quick Create — 10-15x faster than Sonnet, great for drafts
+const FAST_MODEL = "claude-haiku-4-5-20251001";
 
 // ── Prompt templates ─────────────────────────────────────────────────────────
 
@@ -69,10 +74,11 @@ export async function POST(request: NextRequest) {
 
     if (type === "email") {
       const msg = await anthropic.messages.create({
-        model: MODEL,
+        model: FAST_MODEL,
         max_tokens: 500,
         messages: [{ role: "user", content: emailPrompt(prompt.trim()) }],
       });
+      logApiUsage(msg.usage, FAST_MODEL);
       const raw = msg.content[0].type === "text" ? msg.content[0].text.trim() : "";
       const [subjectLine, ...bodyParts] = raw.split("---BODY---");
       return NextResponse.json({
@@ -83,20 +89,22 @@ export async function POST(request: NextRequest) {
 
     if (type === "whatsapp") {
       const msg = await anthropic.messages.create({
-        model: MODEL,
+        model: FAST_MODEL,
         max_tokens: 300,
         messages: [{ role: "user", content: whatsappPrompt(prompt.trim()) }],
       });
+      logApiUsage(msg.usage, FAST_MODEL);
       const text = msg.content[0].type === "text" ? msg.content[0].text.trim() : "";
       return NextResponse.json({ message: text });
     }
 
     if (type === "invoice") {
       const msg = await anthropic.messages.create({
-        model: MODEL,
+        model: FAST_MODEL,
         max_tokens: 200,
         messages: [{ role: "user", content: invoicePrompt(prompt.trim()) }],
       });
+      logApiUsage(msg.usage, FAST_MODEL);
       const raw = msg.content[0].type === "text" ? msg.content[0].text.trim() : "{}";
       // Strip any accidental markdown code blocks
       const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
