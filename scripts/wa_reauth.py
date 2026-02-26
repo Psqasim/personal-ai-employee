@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""WA Pair v7 - robust phone-number pairing, no hardcoded coordinates"""
+"""WA Pair v9 - use text_content() to avoid layout-reflow timeouts on ARM"""
 import time, sys, re, os
 from playwright.sync_api import sync_playwright
 
@@ -60,9 +60,21 @@ JS_NEXT = '''() => {
 }'''
 
 
+def safe_body_text(page, timeout=30000):
+    """Get body text without triggering layout reflow (avoids ARM timeout)."""
+    try:
+        return page.locator('body').text_content(timeout=timeout) or ''
+    except Exception:
+        # Fallback: evaluate JS directly
+        try:
+            return page.evaluate('() => document.body?.innerText || document.body?.textContent || ""') or ''
+        except Exception:
+            return ''
+
+
 def get_code(page):
     """Extract 8-char pairing code from page body"""
-    txt = page.locator('body').inner_text()
+    txt = safe_body_text(page)
     lines = txt.split('\n')
     code_chars = []
     in_code = False
@@ -88,7 +100,7 @@ def poll_for_code(page, timeout=45):
             print(f'Code found after {(i+1)*2}s', flush=True)
             return code, chars, txt
         # Also check if page now shows "Enter code on phone" text as a signal
-        body_preview = page.locator('body').inner_text()[:300]
+        body_preview = safe_body_text(page)[:300]
         if 'Enter code on phone' in body_preview or 'Linking WhatsApp' in body_preview:
             print(f'Code page detected at {(i+1)*2}s, raw preview: {body_preview[:150]}', flush=True)
         else:
@@ -226,7 +238,7 @@ def find_phone_input(page):
     return 0
 
 
-print('=== WA Pair v8 ===', flush=True)
+print('=== WA Pair v9 ===', flush=True)
 
 # Clear stale session so WhatsApp starts clean (avoids cached bad states)
 import shutil
@@ -253,10 +265,10 @@ with sync_playwright() as p:
     page = ctx.new_page()
     page.set_default_timeout(90000)   # 90s for all actions (ARM VM is slow)
     print('Loading...', flush=True)
-    page.goto('https://web.whatsapp.com', wait_until='domcontentloaded', timeout=60000)
-    time.sleep(25)
+    page.goto('https://web.whatsapp.com', wait_until='domcontentloaded', timeout=90000)
+    time.sleep(30)
 
-    body = page.locator('body').inner_text()
+    body = safe_body_text(page, timeout=45000)
     print(f'State: {body[:120]}', flush=True)
 
     # ── Already logged in ─────────────────────────────────────────────────────
@@ -295,7 +307,7 @@ with sync_playwright() as p:
             if n > 0:
                 print(f'Phone input appeared after {(t+1)*3}s', flush=True)
                 break
-            chk = page.locator('body').inner_text()
+            chk = safe_body_text(page)
             if 'Enter phone' in chk or ('phone number' in chk.lower() and 'Log in with phone' not in chk):
                 print(f'Page changed after {(t+1)*3}s, rechecking input...', flush=True)
                 n = find_phone_input(page)
@@ -322,7 +334,7 @@ with sync_playwright() as p:
             code, chars, _ = poll_for_code(page, timeout=45)
         else:
             # Take screenshot to debug what we see after clicking
-            body2 = page.locator('body').inner_text()
+            body2 = safe_body_text(page)
             print(f'Page after click: {body2[:200]}', flush=True)
             print('All inputs on page:', flush=True)
             for inp in page.locator('input').all():
