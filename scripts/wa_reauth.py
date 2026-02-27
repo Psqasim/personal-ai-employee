@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""WA Pair v10 - text_content for state, JS innerText + regex for code extract"""
+"""WA Pair v11 - targeted DOM code extraction near 'Enter code on phone' heading"""
 import time, sys, re, os
 from playwright.sync_api import sync_playwright
 
@@ -73,29 +73,11 @@ def safe_body_text(page, timeout=30000):
 
 
 JS_EXTRACT_CODE = """() => {
-    // Strategy 1: find single-char leaf elements after "Enter code on phone"
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
-    let found = false;
-    const chars = [];
-    while (walker.nextNode()) {
-        const el = walker.currentNode;
-        const t = (el.textContent || '').trim();
-        if (!found && (t.includes('Enter code on phone') || t.includes('Linking WhatsApp'))) {
-            found = true;
-            continue;
-        }
-        if (found && el.children.length === 0 && /^[A-Z0-9]$/.test(t)) {
-            chars.push(t);
-            if (chars.length >= 8) break;
-        }
-    }
-    if (chars.length >= 8) return chars.join('');
-
-    // Strategy 2: regex on innerText (line-based, like old inner_text)
+    // Strategy 1: innerText line parsing (proven — gives one char per line)
     try {
         const body = document.body.innerText || '';
         const lines = body.split('\\n');
-        const chars2 = [];
+        const chars = [];
         let inCode = false;
         for (const ln of lines) {
             const s = ln.trim();
@@ -103,23 +85,57 @@ JS_EXTRACT_CODE = """() => {
                 inCode = true; continue;
             }
             if (inCode) {
-                if (/^[A-Z0-9]$/.test(s)) chars2.push(s);
-                else if (chars2.length >= 8) break;
-                else if (s && s !== '-' && !/^[A-Z0-9]$/.test(s) && chars2.length < 4) inCode = false;
+                if (/^[A-Z0-9]$/.test(s)) chars.push(s);
+                else if (chars.length >= 8) break;
+                else if (s && s !== '-' && !/^[A-Z0-9]$/.test(s) && chars.length < 4) inCode = false;
             }
         }
-        if (chars2.length >= 8) return chars2.slice(0, 8).join('');
+        if (chars.length >= 8) return 'S1:' + chars.slice(0, 8).join('');
     } catch(e) {}
 
-    // Strategy 3: regex on raw textContent for 8 consecutive uppercase/digits
+    // Strategy 2: targeted DOM — find "Enter code on phone" element, then walk
+    // up to its container and collect single-char leaf elements ONLY within it
     try {
-        const raw = document.body.textContent || '';
-        const idx = raw.indexOf('Enter code on phone');
-        if (idx > -1) {
-            const after = raw.slice(idx);
-            const m = after.match(/([A-Z0-9])[^A-Z0-9]*([A-Z0-9])[^A-Z0-9]*([A-Z0-9])[^A-Z0-9]*([A-Z0-9])[^A-Z0-9]*([A-Z0-9])[^A-Z0-9]*([A-Z0-9])[^A-Z0-9]*([A-Z0-9])[^A-Z0-9]*([A-Z0-9])/);
-            if (m) return m.slice(1).join('');
+        // Find the exact heading element (leaf node with that text)
+        let heading = null;
+        const candidates = document.querySelectorAll('div, span, h1, h2, h3, p');
+        for (const el of candidates) {
+            const t = (el.textContent || '').trim();
+            if ((t === 'Enter code on phone' || t === 'Linking WhatsApp') && el.children.length === 0) {
+                heading = el;
+                break;
+            }
         }
+        if (!heading) {
+            for (const el of candidates) {
+                const t = (el.textContent || '').trim();
+                if (t === 'Enter code on phone' || t.startsWith('Enter code on phone')) {
+                    heading = el;
+                    break;
+                }
+            }
+        }
+        if (heading) {
+            // Walk up 2-8 levels and at each level, look for exactly 8 single-char leaves
+            let container = heading;
+            for (let level = 0; level < 8; level++) {
+                if (!container.parentElement) break;
+                container = container.parentElement;
+                const leaves = [...container.querySelectorAll('*')].filter(
+                    el => el.children.length === 0 && /^[A-Z0-9]$/.test((el.textContent || '').trim())
+                );
+                if (leaves.length >= 8) return 'S2:' + leaves.slice(0, 8).map(el => el.textContent.trim()).join('');
+            }
+        }
+    } catch(e) {}
+
+    // Strategy 3: dump all single-char leaf elements on the page for debugging
+    try {
+        const all = [...document.querySelectorAll('*')].filter(
+            el => el.children.length === 0 && /^[A-Z0-9]$/.test((el.textContent || '').trim())
+        );
+        const dump = all.map(el => el.textContent.trim()).join(',');
+        return 'DEBUG:' + dump;
     } catch(e) {}
 
     return '';
@@ -129,10 +145,22 @@ JS_EXTRACT_CODE = """() => {
 def get_code(page):
     """Extract 8-char pairing code from page via in-browser JS (no layout timeout)."""
     try:
-        code = page.evaluate(JS_EXTRACT_CODE) or ''
+        raw = page.evaluate(JS_EXTRACT_CODE) or ''
     except Exception as e:
         print(f'get_code JS error: {e}', flush=True)
+        raw = ''
+
+    # Parse strategy prefix
+    if raw.startswith('S1:') or raw.startswith('S2:'):
+        strategy = raw[:2]
+        code = raw[3:]
+        print(f'Code extraction via {strategy}: {code}', flush=True)
+    elif raw.startswith('DEBUG:'):
+        print(f'No code found. All single-char leaves: {raw[6:]}', flush=True)
         code = ''
+    else:
+        code = raw
+
     txt = safe_body_text(page)
     return code[:8], list(code[:8]), txt
 
@@ -283,7 +311,7 @@ def find_phone_input(page):
     return 0
 
 
-print('=== WA Pair v10 ===', flush=True)
+print('=== WA Pair v11 ===', flush=True)
 
 # Clear stale session so WhatsApp starts clean (avoids cached bad states)
 import shutil
