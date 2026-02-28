@@ -27,6 +27,7 @@ import urllib.parse
 from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Dict, Tuple, Optional
 
 project_root = Path(__file__).parent.parent
@@ -250,7 +251,7 @@ def generate_reply(sender: str, message: str) -> str:
     try:
         import anthropic
         client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-        now = datetime.now()
+        now = datetime.now(ZoneInfo("Asia/Karachi"))
         hour = now.hour
         # Time-aware status
         if 23 <= hour or hour < 8:
@@ -318,7 +319,7 @@ def log_action(sender: str, msg: str, reply: str, urgent: bool, sent: bool):
         f = log_dir / "auto_replies.md"
         if not f.exists():
             f.write_text("# WhatsApp Auto-Reply Log\n\n| Time | From | Urgent | Sent | Message | Reply |\n|------|------|--------|------|---------|-------|\n")
-        ts = datetime.now().strftime("%H:%M:%S")
+        ts = datetime.now(ZoneInfo("Asia/Karachi")).strftime("%H:%M:%S")
         with open(f, "a", encoding="utf-8") as fp:
             fp.write(f"| {ts} | {sender} | {'🚨' if urgent else '—'} | {'✅' if sent else '❌'} | {msg[:40].replace('|','-')} | {reply[:40].replace('|','-')} |\n")
     except Exception:
@@ -512,19 +513,25 @@ def _open_chat_by_search(page, phone: str) -> bool:
         # Dismiss any open chat/dialog first
         try:
             page.keyboard.press("Escape")
-            page.wait_for_timeout(600)
+            page.wait_for_timeout(800)
         except Exception:
             pass
         _dismiss_dialogs(page)
+
+        # Wait for sidebar to be fully interactive (slow Oracle ARM VM)
+        page.wait_for_timeout(2000)
 
         # Click the search icon to open search
         search_opened = False
         for sel in [
             '[data-testid="search-icon"]',
             'span[data-testid="search"]',
+            '[data-testid="chat-list-search"]',
+            '[data-testid="search-container"]',
             'div[aria-label="Search or start new chat"]',
             '[aria-label="Search"]',
             'button[aria-label="Search"]',
+            '#side header button',
         ]:
             loc = page.locator(sel)
             if loc.count() > 0:
@@ -535,8 +542,26 @@ def _open_chat_by_search(page, phone: str) -> bool:
                 except Exception:
                     continue
 
+        # Keyboard fallback: Ctrl+/ is WhatsApp Web's native search shortcut
         if not search_opened:
-            logger.warning("Search icon not found")
+            logger.info("Search icon not found — trying Ctrl+/ keyboard shortcut")
+            try:
+                page.keyboard.press("Control+/")
+                page.wait_for_timeout(1500)
+                # Check if a search input appeared
+                for sel in [
+                    'div[contenteditable="true"][data-tab="3"]',
+                    '[aria-label="Search input textbox"]',
+                    'div[data-testid="search-input"] div[contenteditable="true"]',
+                ]:
+                    if page.locator(sel).count() > 0:
+                        search_opened = True
+                        break
+            except Exception:
+                pass
+
+        if not search_opened:
+            logger.warning("Search icon not found (all selectors + keyboard failed)")
             continue
 
         page.wait_for_timeout(1000)
