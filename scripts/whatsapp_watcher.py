@@ -408,6 +408,13 @@ def _wait_for_whatsapp(page) -> bool:
     return True
 
 
+def _normalize_phone(raw: str) -> str:
+    """Strip spaces/dashes/parens from phone-like strings so '+92 301 0832227'
+    and '+923010832227' produce the same cache key."""
+    digits = re.sub(r"[^\d+]", "", raw)
+    return digits if digits else raw
+
+
 def _read_sender(page, i: int) -> str:
     sender = f"Chat_{i+1}"
     for sel in [
@@ -419,6 +426,9 @@ def _read_sender(page, i: int) -> str:
         if el.count() > 0:
             t = el.first.inner_text().strip()
             if t:
+                # Normalize phone-like senders so Phase-1/Phase-3 always match
+                if re.match(r'^[+\d\s\-()]+$', t):
+                    return _normalize_phone(t)
                 return t
     return sender
 
@@ -763,35 +773,21 @@ def run_cycle(warm_up: bool = False):
                         ctx.close()
                         return
 
-                    rows = page.locator('div[aria-label="Chat list"] > div').all()
-                    if not rows:
-                        rows = page.locator('#pane-side > div > div > div').all()
-
-                    # Build a name→row index map ONLY when there are pending replies.
-                    # Opening all chats marks them as "seen", removing unread badges
-                    # and causing Phase-1 to skip admin messages on the next cycle.
-                    row_map: dict[str, int] = {}
-                    if pending:
-                        for i, row in enumerate(rows[:CHATS_TO_CHECK]):
-                            try:
-                                _dismiss_dialogs(page)  # clear popup before each click
-                                row.click()
-                                page.wait_for_timeout(2500)  # was 1500 — Oracle Cloud needs more
-                                name = _read_sender(page, i)
-                                row_map[name] = i
-                            except Exception:
-                                pass
-
                     for sender, last_msg, reply in pending:
                         sent = False
                         try:
-                            idx = row_map.get(sender)
-                            if idx is not None:
-                                _dismiss_dialogs(page)  # clear popup before send click
-                                rows[idx].click()
-                                page.wait_for_timeout(2500)  # was 1500
+                            # Use search to open the correct chat — far more reliable
+                            # than the old row_map approach which clicked stale DOM
+                            # elements and sent replies to the wrong person.
+                            search_q = sender  # already normalized phone or contact name
+                            if not _open_chat_by_search(page, search_q):
+                                logger.warning(f"⚠️ Could not find chat for {sender} — skipping send")
+                                cache_key = f"{sender}:{last_msg[:50]}"
+                                _replied_cache.add(cache_key)
+                                log_action(sender, last_msg, reply, is_urgent(last_msg), False)
+                                continue
 
-                            msg_box = page.wait_for_selector(MSG_INPUT, timeout=15000)  # was 8000
+                            msg_box = page.wait_for_selector(MSG_INPUT, timeout=15000)
                             msg_box.click()
                             msg_box.fill(reply)
                             page.wait_for_timeout(500)
