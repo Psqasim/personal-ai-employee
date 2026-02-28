@@ -323,7 +323,6 @@ def _make_browser(p):
         "--disable-dev-shm-usage",
         "--disable-crash-reporter",
         "--disable-background-networking",
-        "--disable-blink-features=AutomationControlled",
     ]
     if _IS_WSL2:
         # WSL2: --no-zygote prevents SIGTRAP crash (needed even in headless mode)
