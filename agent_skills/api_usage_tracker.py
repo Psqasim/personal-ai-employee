@@ -26,6 +26,7 @@ class APIUsageTracker:
         "claude-opus-4-6": {"prompt": 15.0, "completion": 75.0},
         "claude-sonnet-4": {"prompt": 3.0, "completion": 15.0},
         "claude-sonnet-4-5-20250929": {"prompt": 3.0, "completion": 15.0},
+        "claude-sonnet-4-6": {"prompt": 3.0, "completion": 15.0},
         "claude-haiku-3-5": {"prompt": 0.8, "completion": 4.0},
         "claude-haiku-4-5-20251001": {"prompt": 0.8, "completion": 4.0},
     }
@@ -58,7 +59,7 @@ class APIUsageTracker:
         Log a Claude API call and calculate cost
 
         Args:
-            model: Claude model name (e.g., "claude-sonnet-4-5-20250929")
+            model: Claude model name (e.g., "claude-sonnet-4-6")
             prompt_tokens: Input token count
             completion_tokens: Output token count
             task_type: Task that triggered call (email_draft, linkedin_draft, etc.)
@@ -109,7 +110,7 @@ class APIUsageTracker:
             Cost in USD
         """
         # Get pricing (fallback to Sonnet if model not found)
-        pricing = self.PRICING.get(model, self.PRICING["claude-sonnet-4-5-20250929"])
+        pricing = self.PRICING.get(model, self.PRICING["claude-sonnet-4-6"])
 
         prompt_cost = (prompt_tokens * pricing["prompt"]) / 1_000_000
         completion_cost = (completion_tokens * pricing["completion"]) / 1_000_000

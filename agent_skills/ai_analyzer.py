@@ -173,7 +173,7 @@ async def _call_claude_api(
         logger.warning("CLAUDE_API_KEY not set. Using Bronze fallback.")
         return BRONZE_FALLBACK.copy()
 
-    model = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
+    model = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
 
     system_prompt = (
         "You are a task priority analyzer. Analyze the given task and respond with ONLY a JSON object "

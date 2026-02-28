@@ -314,7 +314,7 @@ def _call_claude_api(prompt: str, max_tokens: int = 500) -> str:
     if not api_key:
         raise Exception("CLAUDE_API_KEY not set in environment")
 
-    model = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
+    model = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
 
     try:
         client = anthropic.Anthropic(api_key=api_key)

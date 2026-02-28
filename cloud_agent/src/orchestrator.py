@@ -181,7 +181,7 @@ class CloudOrchestrator:
 
                 # Track API usage
                 self.api_tracker.log_api_call(
-                    model="claude-sonnet-4-5-20250929",
+                    model="claude-sonnet-4-6",
                     prompt_tokens=500,  # Estimate
                     completion_tokens=300,  # Estimate
                     task_type="email_draft"
