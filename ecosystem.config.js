@@ -16,7 +16,7 @@ module.exports = {
     {
       name: 'cloud_orchestrator',
       script: 'cloud_agent/src/orchestrator.py',
-      interpreter: 'python3',
+      interpreter: 'venv/bin/python',
       cwd: '/opt/personal-ai-employee',
 
       // Environment variables
@@ -61,7 +61,7 @@ module.exports = {
     {
       name: 'git_sync_cloud',
       script: 'cloud_agent/src/git_sync.py',
-      interpreter: 'python3',
+      interpreter: 'venv/bin/python',
       cwd: '/opt/personal-ai-employee',
 
       env: {
