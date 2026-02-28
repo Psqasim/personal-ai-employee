@@ -91,8 +91,9 @@ def _load_cache() -> None:
 
 
 def _save_cache() -> None:
-    """Persist reply cache to disk — admin entries excluded so admins can
-    retry the same command after a restart without being blocked by cache."""
+    """Persist reply cache to disk — admin entries saved with shorter TTL (4h)
+    so old commands aren't re-executed after restart, but admins can still
+    retry after 4 hours."""
     try:
         try:
             from cloud_agent.src.command_router import ADMIN_PHONES
@@ -100,12 +101,28 @@ def _save_cache() -> None:
             ADMIN_PHONES = set()
 
         now = time.time()
+        admin_ttl = now - 4 * 3600  # admin entries expire after 4h
         data = {}
+        # Load existing timestamps to preserve them (don't reset on every save)
+        try:
+            if os.path.exists(_CACHE_FILE):
+                with open(_CACHE_FILE) as f:
+                    existing = json.load(f)
+            else:
+                existing = {}
+        except Exception:
+            existing = {}
+
         for k in _replied_cache:
             sender = k.split(":")[0] if ":" in k else ""
             sender_digits = re.sub(r"[^\d]", "", sender)[-10:]
-            if sender_digits not in ADMIN_PHONES:
-                data[k] = now
+            is_admin = sender_digits in ADMIN_PHONES
+            # Keep existing timestamp if available, else use now
+            ts = existing.get(k, now)
+            # Skip expired admin entries (>4h old)
+            if is_admin and ts < admin_ttl:
+                continue
+            data[k] = ts
         with open(_CACHE_FILE, "w") as f:
             json.dump(data, f)
     except Exception as e:
@@ -497,17 +514,18 @@ def _parse_vault_frontmatter(file_path: Path) -> dict:
 def _open_chat_by_search(page, phone: str) -> bool:
     """
     Open a WhatsApp chat by searching for phone number or contact name.
-    Stays on the same loaded page (no full page.goto reload).
+    3-layer strategy:
+      Layer 1: In-page search via icon click / keyboard shortcut
+      Layer 2: Direct URL navigation (page.goto) as reliable fallback
     Returns True if chat was opened and MSG_INPUT is visible.
-    Retries once on failure with digits-only query.
     """
-    # Strip leading '+' — WhatsApp search matches better with digits only
-    search_query = phone.lstrip("+")
+    digits_only = re.sub(r"[^\d]", "", phone)
+    # Search queries to try: full number, then local 10-digit
+    queries = [phone.lstrip("+"), digits_only[-10:]]
 
-    for attempt in range(2):
-        if attempt == 1:
-            # Retry: use last 10 digits only (local number without country code)
-            search_query = re.sub(r"[^\d]", "", phone)[-10:]
+    # ── Layer 1: In-page search ──────────────────────────────────────────────
+    for attempt, search_query in enumerate(queries):
+        if attempt > 0:
             logger.info(f"🔄 Search retry with local number: {search_query}")
 
         # Dismiss any open chat/dialog first
@@ -517,100 +535,198 @@ def _open_chat_by_search(page, phone: str) -> bool:
         except Exception:
             pass
         _dismiss_dialogs(page)
+        page.wait_for_timeout(1500)
 
-        # Wait for sidebar to be fully interactive (slow Oracle ARM VM)
-        page.wait_for_timeout(2000)
-
-        # Click the search icon to open search
-        search_opened = False
-        for sel in [
-            '[data-testid="search-icon"]',
-            'span[data-testid="search"]',
-            '[data-testid="chat-list-search"]',
-            '[data-testid="search-container"]',
-            'div[aria-label="Search or start new chat"]',
-            '[aria-label="Search"]',
-            'button[aria-label="Search"]',
-            '#side header button',
-        ]:
-            loc = page.locator(sel)
-            if loc.count() > 0:
-                try:
-                    loc.first.click(timeout=4000)
-                    search_opened = True
-                    break
-                except Exception:
-                    continue
-
-        # Keyboard fallback: Ctrl+/ is WhatsApp Web's native search shortcut
-        if not search_opened:
-            logger.info("Search icon not found — trying Ctrl+/ keyboard shortcut")
-            try:
-                page.keyboard.press("Control+/")
-                page.wait_for_timeout(1500)
-                # Check if a search input appeared
-                for sel in [
-                    'div[contenteditable="true"][data-tab="3"]',
-                    '[aria-label="Search input textbox"]',
-                    'div[data-testid="search-input"] div[contenteditable="true"]',
-                ]:
-                    if page.locator(sel).count() > 0:
-                        search_opened = True
-                        break
-            except Exception:
-                pass
+        # Try to open the search panel
+        search_opened = _try_open_search(page)
 
         if not search_opened:
-            logger.warning("Search icon not found (all selectors + keyboard failed)")
+            logger.warning(f"Search panel not found (attempt {attempt + 1})")
             continue
 
-        page.wait_for_timeout(1000)
+        page.wait_for_timeout(800)
 
-        # Type phone number in search input
-        typed = False
-        for sel in [
-            'div[data-testid="search-input"] div[contenteditable="true"]',
-            '[aria-label="Search input textbox"]',
-            'div[contenteditable="true"][data-tab="3"]',
-            'div[role="textbox"][data-tab="3"]',
-        ]:
-            sinput = page.locator(sel)
-            if sinput.count() > 0:
-                try:
-                    sinput.first.click(timeout=3000)
-                    page.keyboard.press("Control+a")
-                    page.keyboard.press("Delete")
-                    page.keyboard.type(search_query, delay=50)
-                    typed = True
-                    break
-                except Exception:
-                    continue
-
-        if not typed:
+        # Type the query into the search input
+        if not _type_in_search(page, search_query):
             logger.warning("Search input not found")
             continue
 
-        # Wait longer for search results on slow ARM VM
+        # Wait for results on slow ARM VM
         page.wait_for_timeout(5000)
 
         # Click the first search result
-        for sel in [
-            '[data-testid="cell-frame-container"]',
-            'div[aria-label^="Chat with"]',
-            'div[role="listitem"]',
-            '#pane-side [data-testid="cell-frame-container"]',
-        ]:
-            results = page.locator(sel)
-            if results.count() > 0:
-                try:
-                    results.first.click(timeout=5000)
-                    page.wait_for_timeout(2000)
-                    logger.info(f"🔍 Search found chat: {search_query}")
-                    return True
-                except Exception:
-                    continue
+        if _click_first_result(page, search_query):
+            return True
 
-        logger.debug(f"Search attempt {attempt + 1} found no results for: {search_query}")
+        logger.debug(f"Search attempt {attempt + 1}: no results for {search_query}")
+
+    # ── Layer 2: Direct URL fallback (most reliable) ─────────────────────────
+    # WhatsApp Web supports direct chat URLs — slower on ARM VM but guaranteed
+    # to work when the search UI changes.
+    if digits_only:
+        logger.info(f"🌐 Search failed — falling back to direct URL for +{digits_only}")
+        try:
+            page.goto(
+                f"https://web.whatsapp.com/send?phone={digits_only}",
+                wait_until="domcontentloaded",
+                timeout=30000,
+            )
+            # Wait for either the message input (chat opened) or an error
+            page.wait_for_timeout(8000)
+            _dismiss_dialogs(page)
+            # Check if WhatsApp shows "Phone number shared via url is invalid"
+            invalid = page.locator('div[data-testid="popup-contents"]')
+            if invalid.count() > 0:
+                logger.warning(f"WhatsApp says invalid number: +{digits_only}")
+                # Dismiss and go back to main page
+                page.keyboard.press("Escape")
+                page.wait_for_timeout(1000)
+                return False
+            # Check if message input appeared (= chat opened successfully)
+            msg_input = page.locator(MSG_INPUT)
+            if msg_input.count() > 0:
+                logger.info(f"🔍 Direct URL opened chat: +{digits_only}")
+                return True
+            # Wait a bit more on slow VM
+            page.wait_for_timeout(5000)
+            if page.locator(MSG_INPUT).count() > 0:
+                logger.info(f"🔍 Direct URL opened chat (slow): +{digits_only}")
+                return True
+            logger.warning("Direct URL loaded but message input not found")
+        except Exception as e:
+            logger.warning(f"Direct URL fallback failed: {e}")
+
+    return False
+
+
+def _try_open_search(page) -> bool:
+    """Try multiple strategies to open the WhatsApp search panel."""
+    # Strategy 1: CSS selectors (data-testid, aria-label)
+    for sel in [
+        '[data-testid="search-icon"]',
+        'span[data-testid="search"]',
+        '[data-testid="chat-list-search"]',
+        '[data-testid="search-container"]',
+        'div[aria-label="Search or start new chat"]',
+        '[aria-label="Search"]',
+        'button[aria-label="Search"]',
+        '#side header button',
+    ]:
+        loc = page.locator(sel)
+        if loc.count() > 0:
+            try:
+                loc.first.click(timeout=4000)
+                return True
+            except Exception:
+                continue
+
+    # Strategy 2: Playwright role-based locators (resilient to selector changes)
+    try:
+        search_btn = page.get_by_role("button", name=re.compile("search|new chat", re.IGNORECASE))
+        if search_btn.count() > 0:
+            search_btn.first.click(timeout=4000)
+            return True
+    except Exception:
+        pass
+
+    # Strategy 3: Keyboard shortcut (Ctrl+/ is WhatsApp Web's native search)
+    logger.info("Search icon not found — trying keyboard shortcuts")
+    for shortcut in ["Control+/", "Control+f"]:
+        try:
+            page.keyboard.press(shortcut)
+            page.wait_for_timeout(1500)
+            # Check if any search input appeared
+            for sel in [
+                'div[contenteditable="true"][data-tab="3"]',
+                '[aria-label="Search input textbox"]',
+                'div[data-testid="search-input"] div[contenteditable="true"]',
+            ]:
+                if page.locator(sel).count() > 0:
+                    return True
+            # Also check via placeholder
+            si = page.get_by_placeholder(re.compile("search", re.IGNORECASE))
+            if si.count() > 0:
+                return True
+        except Exception:
+            continue
+
+    return False
+
+
+def _type_in_search(page, query: str) -> bool:
+    """Type a search query into the WhatsApp search input."""
+    # CSS selectors
+    for sel in [
+        'div[data-testid="search-input"] div[contenteditable="true"]',
+        '[aria-label="Search input textbox"]',
+        'div[contenteditable="true"][data-tab="3"]',
+        'div[role="textbox"][data-tab="3"]',
+    ]:
+        sinput = page.locator(sel)
+        if sinput.count() > 0:
+            try:
+                sinput.first.click(timeout=3000)
+                page.keyboard.press("Control+a")
+                page.keyboard.press("Delete")
+                page.keyboard.type(query, delay=50)
+                return True
+            except Exception:
+                continue
+
+    # Playwright role/placeholder fallback
+    try:
+        si = page.get_by_placeholder(re.compile("search", re.IGNORECASE))
+        if si.count() > 0:
+            si.first.click(timeout=3000)
+            page.keyboard.press("Control+a")
+            page.keyboard.press("Delete")
+            page.keyboard.type(query, delay=50)
+            return True
+    except Exception:
+        pass
+
+    # Last resort: find any focused contenteditable and type
+    try:
+        ce = page.locator('div[contenteditable="true"]:focus')
+        if ce.count() > 0:
+            page.keyboard.press("Control+a")
+            page.keyboard.press("Delete")
+            page.keyboard.type(query, delay=50)
+            return True
+    except Exception:
+        pass
+
+    return False
+
+
+def _click_first_result(page, query: str) -> bool:
+    """Click the first chat result in WhatsApp search results."""
+    for sel in [
+        '[data-testid="cell-frame-container"]',
+        'div[aria-label^="Chat with"]',
+        'div[role="listitem"]',
+        '#pane-side [data-testid="cell-frame-container"]',
+    ]:
+        results = page.locator(sel)
+        if results.count() > 0:
+            try:
+                results.first.click(timeout=5000)
+                page.wait_for_timeout(2000)
+                logger.info(f"🔍 Search found chat: {query}")
+                return True
+            except Exception:
+                continue
+
+    # Role-based fallback
+    try:
+        items = page.get_by_role("listitem")
+        if items.count() > 0:
+            items.first.click(timeout=5000)
+            page.wait_for_timeout(2000)
+            logger.info(f"🔍 Search found chat (role): {query}")
+            return True
+    except Exception:
+        pass
 
     return False
 
