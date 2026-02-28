@@ -1,7 +1,7 @@
-# Personal AI Employee — Manual Setup & Operations Guide
+# Personal AI Employee — Local & Cloud Operations Guide
 
-> **Last updated:** 2026-02-23
-> **Covers:** Local machine setup · Oracle Cloud VM setup · PM2 · WhatsApp watcher · Claude API · Re-auth · Restart / Stop / Troubleshoot
+> **Last updated:** 2026-02-28
+> **Covers:** Local setup · Oracle Cloud VM · PM2 commands · WhatsApp auth & session transfer · Claude API · Vault storage · Cleanup · Troubleshooting
 
 ---
 
@@ -89,10 +89,22 @@ Always `cd /tmp` before running any `wa_local_setup.py` or `wa_reauth.py` locall
 | `ecosystem.config.js` | PM2 config for Oracle Cloud |
 | `ecosystem.config.local.js` | PM2 config for local machine |
 | `scripts/whatsapp_watcher.py` | WhatsApp AI auto-reply watcher |
-| `scripts/wa_reauth.py` | WhatsApp re-authentication helper |
+| `scripts/wa_reauth.py` | WhatsApp re-auth (v12, --check-only support) |
+| `scripts/wa_local_setup.py` | WhatsApp local auth (WSL2-compatible) |
+| `scripts/wa_session_to_cloud.sh` | One-command: auth local + SCP to cloud + restart |
 | `mcp_servers/whatsapp_mcp/server.py` | MCP server for WhatsApp (local) |
 | `.env` | Local environment variables |
 | `.env.cloud` | Cloud environment variables (on VM only) |
+
+**Where files are stored:**
+
+| Location | Local (your laptop) | Cloud (Oracle VM) |
+|----------|--------------------|--------------------|
+| Project root | `/mnt/d/gov ai code/.../personal-ai-employee` | `/opt/personal-ai-employee` |
+| Vault (drafts, done, logs) | `vault/` under project root | same |
+| WhatsApp session | `~/.whatsapp_session_dir` | `/home/ubuntu/.whatsapp_session_dir` |
+| PM2 logs | `~/.pm2/logs/` | `/home/ubuntu/.pm2/logs/` |
+| Python venv | `venv/` under project root | same |
 
 ---
 
@@ -430,12 +442,14 @@ def _browser_lock(timeout=90):
 
 ### 5.4 WhatsApp Session Storage
 
-| Environment | Session Path | Notes |
-|-------------|-------------|-------|
-| Local | `~/.whatsapp_session_dir` (or `.env` value) | Visible Chrome, QR scan once |
-| Cloud | `/home/ubuntu/.whatsapp_session_dir` | Headless Chrome, phone pairing |
+| Environment | Session Path | Auth Method |
+|-------------|-------------|-------------|
+| Local | `~/.whatsapp_session_dir` | `wa_local_setup.py` (pairing code) |
+| Cloud | `/home/ubuntu/.whatsapp_session_dir` | Session transfer from local (recommended) |
 
 Sessions persist across restarts — you only need to authenticate once (until WhatsApp invalidates it, typically after 14+ days of inactivity on a linked device).
+
+**Session transfer** (v12+): Authenticate locally, SCP session to cloud. WhatsApp rejects pairing from cloud/data-center IPs, so direct cloud auth via `wa_reauth.py` often fails.
 
 ### 5.5 User Agent (Critical for Cloud)
 
@@ -451,10 +465,10 @@ UA = ('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
 | Feature | Local | Cloud |
 |---------|-------|-------|
 | `PLAYWRIGHT_HEADLESS` | `false` (visible) | `true` (headless) |
-| First auth | Phone number pairing code (`wa_local_setup.py`) | Phone number pairing code (`wa_reauth.py`) |
+| Auth method | `wa_local_setup.py` (pairing code) | Session transfer via `wa_session_to_cloud.sh` |
 | Browser lock | Shared with MCP server | Watcher only |
-| Session dir | Custom path in `.env` | `/home/ubuntu/.whatsapp_session_dir` |
-| PM2 config | `ecosystem.config.local.js` | `ecosystem.config.js` |
+| Session dir | `~/.whatsapp_session_dir` | `/home/ubuntu/.whatsapp_session_dir` |
+| PM2 config | `pm2.local.json` (WSL2-safe) | `ecosystem.config.js` |
 
 ---
 
@@ -606,52 +620,41 @@ WhatsApp sessions expire when:
 - You manually remove the linked device in WhatsApp app
 - The browser profile gets corrupted (e.g. Chrome crash mid-session)
 
-**Symptom:** `pm2 logs whatsapp_watcher` shows `Login page shown — session expired`
+**Symptom:** `pm2 logs whatsapp_watcher` shows `Login page shown — session expired` or `QR code`
 
-**Fix (3 commands):**
+**Fix — Session Transfer (recommended, run from LOCAL machine):**
+
+```bash
+cd /tmp
+bash "/mnt/d/gov ai code/QUATER 4 part 2/hacakthon/personal-ai-employee/scripts/wa_session_to_cloud.sh"
+```
+
+This single command:
+1. Checks if your local session is still valid
+2. If expired, re-authenticates locally (shows pairing code — enter on phone)
+3. Stops whatsapp_watcher on cloud
+4. SCPs the session directory to Oracle Cloud VM
+5. Cleans up x86 caches, removes Chrome locks
+6. Restarts whatsapp_watcher on cloud
+
+**Verify it worked:**
 
 ```bash
 ssh -i ~/.ssh/ssh-key-2026-02-17.key ubuntu@129.151.151.212
-
 cd /opt/personal-ai-employee
 
-# Stop watcher (needs exclusive Chrome access)
-pm2 stop whatsapp_watcher
+# Check session validity (does NOT clear session)
+venv/bin/python scripts/wa_reauth.py --check-only
 
-# Run reauth — it auto-clears the stale session and gets a fresh code
-venv/bin/python scripts/wa_reauth.py
+# Check watcher logs
+pm2 logs whatsapp_watcher --lines 20 --nostream
+# Should see: "Found N chats, checking first 10"
 ```
 
-The script handles everything automatically:
-1. Clears old session dir (`~/.whatsapp_session_dir`)
-2. Masks `navigator.webdriver` (so WhatsApp doesn't block the click)
-3. Opens WhatsApp Web, clicks "Log in with phone number"
-4. Fills in your phone number and shows the pairing code (~30-45s)
-
-**When `PAIRING CODE: XXXX-YYYY` appears:**
-
-On your phone:
-1. Open **WhatsApp**
-2. **⋮** → **Linked Devices** → **Link a Device**
-3. Tap **"Link with phone number instead"**
-4. Enter the 8-character code within **3 minutes**
-
-`whatsapp_watcher` starts automatically after `AUTH SUCCESS`. Then save:
-
-```bash
-pm2 save
-```
-
-> **If you see `No 8-char code found`:** Run it again — it's a timing issue.
-> The second run always works because WhatsApp Web loads faster with a warm DNS cache.
-
-#### Why `navigator.webdriver` matters
-
-Playwright (the browser automation library) sets `navigator.webdriver = true` by default.
-WhatsApp Web detects this and silently ignores all click events on the login buttons.
-`wa_reauth.py` v8+ masks this via `--disable-blink-features=AutomationControlled`
-and `ctx.add_init_script("Object.defineProperty(navigator,'webdriver',{get:()=>undefined})")`.
-Without this masking, the phone number button appears but clicking does nothing.
+> **Why not direct cloud pairing?** WhatsApp rejects pairing from data-center IPs
+> (Oracle Cloud, AWS, etc). The pairing code generates correctly, but the phone
+> shows "Couldn't link device" when entering it. Session transfer avoids this
+> by authenticating on your residential IP and copying the session.
 
 ### 8.6 Re-authenticate WhatsApp on Local (WSL2)
 
@@ -665,13 +668,11 @@ pm2 stop whatsapp_watcher_local
 rm -rf ~/.whatsapp_session_dir
 
 # 3. MUST cd to /tmp first — WSL2 Playwright hangs if CWD is on /mnt/d Windows mount
-  cd /tmp
-  python "/mnt/d/gov ai code/QUATER 4 part 2/hacakthon/personal-ai-employee/scripts/wa_local_setup.py"
-```
 cd /tmp
-  source "/mnt/d/gov ai code/QUATER 4 part 2/hacakthon/personal-ai-employee/venv/bin/activate"
-  python "/mnt/d/gov ai code/QUATER 4 part 2/hacakthon/personal-ai-employee/scripts/wa_local_setup.py"
-**After ~25 seconds you'll see:**
+python "/mnt/d/gov ai code/QUATER 4 part 2/hacakthon/personal-ai-employee/scripts/wa_local_setup.py"
+```
+
+After ~25 seconds you'll see:
 ```
 ==================================================
   PAIRING CODE: XXXX-YYYY
@@ -684,12 +685,11 @@ On your phone:
 3. Tap **"Link with phone number instead"**
 4. Enter the 8-character code within 60 seconds
 
-After `✅ AUTH SUCCESS`:
+After `AUTH SUCCESS`:
 
 ```bash
 # 4. Restart the watcher — session is now saved
-pm2 start whatsapp_watcher_local
-pm2 save
+pm2 start whatsapp_watcher_local && pm2 save
 
 # 5. Verify it's polling
 pm2 logs whatsapp_watcher_local --lines 20
@@ -734,15 +734,15 @@ pm2 logs whatsapp_watcher --lines 50
 | `Module 'anthropic' not found` | Not installed | `venv/bin/pip install anthropic` |
 | Killed (exit 137) | Out of memory | Stop other PM2 processes first |
 
-**wa_reauth.py specific issues:**
+**wa_reauth.py specific issues (v12):**
 
 | Output | Cause | Fix |
 |--------|-------|-----|
-| `JS click result: not_found` | "Log in with phone number" not in DOM | WhatsApp UI changed; check page body output |
-| `Phone input count: 0` + page unchanged | `navigator.webdriver` detected | Ensure v8+ is running (`=== WA Pair v8 ===`) |
+| `Couldn't link device` on phone | WhatsApp rejects cloud IP | Use session transfer: `bash scripts/wa_session_to_cloud.sh` |
 | `No 8-char code found` | Timeout before code rendered | Run script again (second run is faster) |
-| `Phone input count: 0` + page shows phone entry | ARM VM too slow to render input | Already handled: v8 polls up to 40s |
-| `Error: ... 9 zombie processes` | Previous Chrome processes not cleaned | `pkill -9 -f chromium` then run reauth |
+| `Session NOT valid` (--check-only) | Session expired or never transferred | Run `wa_session_to_cloud.sh` from local |
+| `Error: ... zombie processes` | Previous Chrome processes not cleaned | `pkill -9 -f chromium` then run reauth |
+| Code looks correct but phone rejects | WhatsApp rate-limited from failed attempts | Wait 15-30 min, then use session transfer |
 
 ### Chrome Lock Conflict
 
@@ -1026,30 +1026,71 @@ After that first manual pull, everything is automatic.
 
 ## Quick Reference Card
 
+### From Local Machine (WSL2)
+
 ```bash
 # ── CLOUD SSH ───────────────────────────────────────────
 ssh -i ~/.ssh/ssh-key-2026-02-17.key ubuntu@129.151.151.212
 
-# ── CHECK EVERYTHING ─────────────────────────────────────
+# ── CHECK CLOUD STATUS (one-shot, no SSH needed) ────────
+ssh -i ~/.ssh/ssh-key-2026-02-17.key ubuntu@129.151.151.212 "pm2 list"
+
+# ── CHECK CLOUD WATCHER LOGS (no SSH needed) ────────────
+ssh -i ~/.ssh/ssh-key-2026-02-17.key ubuntu@129.151.151.212 \
+  "pm2 logs whatsapp_watcher --lines 20 --nostream"
+
+# ── RE-AUTH WHATSAPP ON CLOUD (run from LOCAL) ──────────
+cd /tmp
+bash "/mnt/d/gov ai code/QUATER 4 part 2/hacakthon/personal-ai-employee/scripts/wa_session_to_cloud.sh"
+
+# ── RE-AUTH WHATSAPP LOCAL ONLY ─────────────────────────
+pm2 stop whatsapp_watcher_local
+rm -rf ~/.whatsapp_session_dir
+cd /tmp
+python "/mnt/d/gov ai code/QUATER 4 part 2/hacakthon/personal-ai-employee/scripts/wa_local_setup.py"
+# Enter code on phone, then:
+pm2 start whatsapp_watcher_local && pm2 save
+
+# ── START LOCAL PM2 ─────────────────────────────────────
+cd "/mnt/d/gov ai code/QUATER 4 part 2/hacakthon/personal-ai-employee"
+pm2 start pm2.local.json && pm2 save
+
+# ── LOCAL LOGS ──────────────────────────────────────────
+pm2 logs whatsapp_watcher_local       # WhatsApp
+pm2 logs local_approval_handler       # Email/approval
+```
+
+### Inside Cloud VM (after SSH)
+
+```bash
+cd /opt/personal-ai-employee
+
+# ── CHECK STATUS ────────────────────────────────────────
 pm2 list
 
-# ── LOGS (live) ──────────────────────────────────────────
+# ── LOGS ────────────────────────────────────────────────
 pm2 logs                              # all
 pm2 logs whatsapp_watcher             # WhatsApp only
+pm2 logs whatsapp_watcher --lines 50 --nostream  # last 50 lines
 
-# ── RESTART ──────────────────────────────────────────────
+# ── RESTART ─────────────────────────────────────────────
 pm2 restart all                       # everything
 pm2 restart whatsapp_watcher          # WhatsApp only
 
-# ── RE-AUTH WHATSAPP ─────────────────────────────────────
-pm2 stop whatsapp_watcher
-venv/bin/python scripts/wa_reauth.py   # shows PAIRING CODE, enter on phone
-# AUTH SUCCESS auto-starts watcher — then:
-pm2 save
+# ── CHECK SESSION ───────────────────────────────────────
+venv/bin/python scripts/wa_reauth.py --check-only
 
-# ── UPDATE CODE ──────────────────────────────────────────
+# ── UPDATE CODE ─────────────────────────────────────────
 git pull && pm2 restart all
 
-# ── SAVE STATE ───────────────────────────────────────────
+# ── CLEANUP ─────────────────────────────────────────────
+pm2 flush                             # clear PM2 logs
+rm -f vault/Failed/retry_*.md         # remove old retry files
+
+# ── CHECK DISK / MEMORY ────────────────────────────────
+df -h / && free -h
+pm2 monit                             # live dashboard
+
+# ── SAVE STATE ──────────────────────────────────────────
 pm2 save
 ```
