@@ -380,7 +380,10 @@ def _wait_for_whatsapp(page) -> bool:
     page.goto("https://web.whatsapp.com", wait_until="domcontentloaded", timeout=40000)
     # Cloud VM (headless) needs more time for JS-heavy WhatsApp Web to initialise
     page.wait_for_timeout(20000 if HEADLESS else 4000)
-    page.wait_for_selector(f'{CHAT_LIST}, {QR_CODE}', timeout=90000)
+    # Use state='attached' (DOM presence) instead of default 'visible' — on Oracle
+    # ARM VM the chat list element can be in the DOM but Playwright doesn't consider
+    # it "visible" until the full React tree renders, which can exceed 90s.
+    page.wait_for_selector(f'{CHAT_LIST}, {QR_CODE}', timeout=90000, state='attached')
     # Check any login-required indicator (canvas OR img QR, landing page, phone link)
     # Also check absence of chat list as final fallback (page loaded but no chats = logged out)
     is_login_page = any(
