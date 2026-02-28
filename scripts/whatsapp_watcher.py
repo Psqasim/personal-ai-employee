@@ -250,12 +250,14 @@ def generate_reply(sender: str, message: str) -> str:
     try:
         import anthropic
         client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        now = datetime.now()
         resp = client.messages.create(
             model=CLAUDE_MODEL,
             max_tokens=200,
             system=(
                 "You are Qasim's personal AI assistant managing his WhatsApp. "
                 "Qasim is a software engineer and AI developer working on automation projects. "
+                f"Today's date is {now.strftime('%B %d, %Y')} and the current time is {now.strftime('%I:%M %p')} (PKT). "
                 "Reply naturally and helpfully in the SAME language as the incoming message. "
                 "Keep replies short (1-3 sentences). Be warm and conversational. "
                 "If asked what Qasim is doing, say he is working on AI automation projects. "
@@ -474,72 +476,97 @@ def _parse_vault_frontmatter(file_path: Path) -> dict:
 
 def _open_chat_by_search(page, phone: str) -> bool:
     """
-    Open a WhatsApp chat by searching for phone number.
+    Open a WhatsApp chat by searching for phone number or contact name.
     Stays on the same loaded page (no full page.goto reload).
     Returns True if chat was opened and MSG_INPUT is visible.
+    Retries once on failure with digits-only query.
     """
-    # Dismiss any open chat/dialog first
-    try:
-        page.keyboard.press("Escape")
-        page.wait_for_timeout(600)
-    except Exception:
-        pass
-    _dismiss_dialogs(page)
+    # Strip leading '+' — WhatsApp search matches better with digits only
+    search_query = phone.lstrip("+")
 
-    # Click the search icon to open search
-    for sel in [
-        '[data-testid="search-icon"]',
-        'span[data-testid="search"]',
-        'div[aria-label="Search or start new chat"]',
-        '[aria-label="Search"]',
-    ]:
-        loc = page.locator(sel)
-        if loc.count() > 0:
-            try:
-                loc.first.click(timeout=4000)
-                break
-            except Exception:
-                continue
-    page.wait_for_timeout(800)
+    for attempt in range(2):
+        if attempt == 1:
+            # Retry: use last 10 digits only (local number without country code)
+            search_query = re.sub(r"[^\d]", "", phone)[-10:]
+            logger.info(f"🔄 Search retry with local number: {search_query}")
 
-    # Type phone number in search input
-    typed = False
-    for sel in [
-        'div[data-testid="search-input"] div[contenteditable="true"]',
-        '[aria-label="Search input textbox"]',
-        'div[contenteditable="true"][data-tab="3"]',
-    ]:
-        sinput = page.locator(sel)
-        if sinput.count() > 0:
-            try:
-                sinput.first.click(timeout=3000)
-                page.keyboard.press("Control+a")
-                page.keyboard.press("Delete")
-                page.keyboard.type(phone, delay=40)
-                typed = True
-                break
-            except Exception:
-                continue
+        # Dismiss any open chat/dialog first
+        try:
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(600)
+        except Exception:
+            pass
+        _dismiss_dialogs(page)
 
-    if not typed:
-        return False
+        # Click the search icon to open search
+        search_opened = False
+        for sel in [
+            '[data-testid="search-icon"]',
+            'span[data-testid="search"]',
+            'div[aria-label="Search or start new chat"]',
+            '[aria-label="Search"]',
+            'button[aria-label="Search"]',
+        ]:
+            loc = page.locator(sel)
+            if loc.count() > 0:
+                try:
+                    loc.first.click(timeout=4000)
+                    search_opened = True
+                    break
+                except Exception:
+                    continue
 
-    page.wait_for_timeout(3000)  # Wait for search results to load
+        if not search_opened:
+            logger.warning("Search icon not found")
+            continue
 
-    # Click the first search result
-    for sel in [
-        '[data-testid="cell-frame-container"]',
-        'div[aria-label^="Chat with"]',
-        'div[role="listitem"]',
-    ]:
-        results = page.locator(sel)
-        if results.count() > 0:
-            try:
-                results.first.click(timeout=4000)
-                page.wait_for_timeout(2000)
-                return True
-            except Exception:
-                continue
+        page.wait_for_timeout(1000)
+
+        # Type phone number in search input
+        typed = False
+        for sel in [
+            'div[data-testid="search-input"] div[contenteditable="true"]',
+            '[aria-label="Search input textbox"]',
+            'div[contenteditable="true"][data-tab="3"]',
+            'div[role="textbox"][data-tab="3"]',
+        ]:
+            sinput = page.locator(sel)
+            if sinput.count() > 0:
+                try:
+                    sinput.first.click(timeout=3000)
+                    page.keyboard.press("Control+a")
+                    page.keyboard.press("Delete")
+                    page.keyboard.type(search_query, delay=50)
+                    typed = True
+                    break
+                except Exception:
+                    continue
+
+        if not typed:
+            logger.warning("Search input not found")
+            continue
+
+        # Wait longer for search results on slow ARM VM
+        page.wait_for_timeout(5000)
+
+        # Click the first search result
+        for sel in [
+            '[data-testid="cell-frame-container"]',
+            'div[aria-label^="Chat with"]',
+            'div[role="listitem"]',
+            '#pane-side [data-testid="cell-frame-container"]',
+        ]:
+            results = page.locator(sel)
+            if results.count() > 0:
+                try:
+                    results.first.click(timeout=5000)
+                    page.wait_for_timeout(2000)
+                    logger.info(f"🔍 Search found chat: {search_query}")
+                    return True
+                except Exception:
+                    continue
+
+        logger.debug(f"Search attempt {attempt + 1} found no results for: {search_query}")
 
     return False
 
