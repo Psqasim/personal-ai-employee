@@ -1,6 +1,15 @@
 #!/usr/bin/env python3
-"""WA Pair v11 - targeted DOM code extraction near 'Enter code on phone' heading"""
-import time, sys, re, os
+"""WA Pair v12 - session transfer support + --check-only mode
+
+For cloud auth, the recommended approach is:
+  1. Authenticate locally (wa_local_setup.py works on residential IPs)
+  2. Transfer session: bash scripts/wa_session_to_cloud.sh
+  3. Verify: python scripts/wa_reauth.py --check-only
+
+Direct cloud pairing (phone number method) often fails because WhatsApp
+rejects pairing from data-center IPs (Oracle, AWS, etc).
+"""
+import time, sys, re, os, argparse
 from playwright.sync_api import sync_playwright
 
 SESSION = '/home/ubuntu/.whatsapp_session_dir'
@@ -9,6 +18,12 @@ UA = ('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
 
 # Phone number to authenticate with (loaded from env or fallback)
 PHONE = os.getenv('WHATSAPP_PHONE_NUMBER', '+923460326429')
+
+# Parse CLI args
+parser = argparse.ArgumentParser(description='WhatsApp re-authentication')
+parser.add_argument('--check-only', action='store_true',
+                    help='Only check if existing session is valid (no clearing, no pairing)')
+args = parser.parse_args()
 
 JS_FILL = f'''() => {{
     const selectors = [
@@ -311,13 +326,23 @@ def find_phone_input(page):
     return 0
 
 
-print('=== WA Pair v11 ===', flush=True)
+print('=== WA Pair v12 ===', flush=True)
 
-# Clear stale session so WhatsApp starts clean (avoids cached bad states)
+if args.check_only:
+    print('Mode: CHECK-ONLY (will not clear session or attempt pairing)', flush=True)
+else:
+    print('Mode: FULL RE-AUTH (will clear session and pair)', flush=True)
+
+# Only clear session in full re-auth mode
 import shutil
-if os.path.exists(SESSION):
-    shutil.rmtree(SESSION)
-    print(f'Cleared session dir: {SESSION}', flush=True)
+if not args.check_only:
+    if os.path.exists(SESSION):
+        shutil.rmtree(SESSION)
+        print(f'Cleared session dir: {SESSION}', flush=True)
+elif not os.path.exists(SESSION):
+    print(f'ERROR: No session found at {SESSION}', flush=True)
+    print('Transfer a session first: bash scripts/wa_session_to_cloud.sh', flush=True)
+    sys.exit(1)
 
 STEALTH_JS = """
 Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
@@ -347,10 +372,21 @@ with sync_playwright() as p:
     # ── Already logged in ─────────────────────────────────────────────────────
     if page.locator('div[aria-label="Chat list"],#pane-side').count() > 0:
         print('ALREADY LOGGED IN!', flush=True)
+        if args.check_only:
+            print('Session is VALID. WhatsApp Web loaded with chat list.', flush=True)
+            ctx.close(); sys.exit(0)
         import subprocess
         subprocess.run(['pm2','start','/opt/personal-ai-employee/ecosystem.config.js',
                         '--only','whatsapp_watcher'], cwd='/opt/personal-ai-employee')
         ctx.close(); sys.exit(0)
+
+    # ── Check-only mode: session not logged in ──────────────────────────────
+    if args.check_only:
+        print(f'Session NOT valid. Page shows: {body[:120]}', flush=True)
+        print('Need to re-authenticate. Options:', flush=True)
+        print('  1. Transfer from local: bash scripts/wa_session_to_cloud.sh', flush=True)
+        print('  2. Direct cloud auth:   venv/bin/python scripts/wa_reauth.py', flush=True)
+        ctx.close(); sys.exit(1)
 
     # ── Already on Enter code page ────────────────────────────────────────────
     if 'Enter code on phone' in body or 'Get a new code' in body:
