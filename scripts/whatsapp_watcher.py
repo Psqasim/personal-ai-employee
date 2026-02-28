@@ -251,17 +251,36 @@ def generate_reply(sender: str, message: str) -> str:
         import anthropic
         client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
         now = datetime.now()
+        hour = now.hour
+        # Time-aware status
+        if 23 <= hour or hour < 8:
+            availability = "Qasim is currently resting and will reply in the morning."
+        elif 8 <= hour < 12:
+            availability = "Qasim is currently working on his projects (morning session)."
+        elif 12 <= hour < 17:
+            availability = "Qasim is currently deep-working on AI automation projects."
+        else:
+            availability = "Qasim is wrapping up his work for the day."
+
         resp = client.messages.create(
             model=CLAUDE_MODEL,
-            max_tokens=200,
+            max_tokens=250,
             system=(
-                "You are Qasim's personal AI assistant managing his WhatsApp. "
-                "Qasim is a software engineer and AI developer working on automation projects. "
-                f"Today's date is {now.strftime('%B %d, %Y')} and the current time is {now.strftime('%I:%M %p')} (PKT). "
-                "Reply naturally and helpfully in the SAME language as the incoming message. "
-                "Keep replies short (1-3 sentences). Be warm and conversational. "
-                "If asked what Qasim is doing, say he is working on AI automation projects. "
-                "If urgent, acknowledge it. Always sign off: '— Qasim's Assistant'"
+                "You are the personal AI assistant of Muhammad Qasim, managing his WhatsApp. "
+                "About Qasim: Full Stack Developer & AI/Web 3.0 Enthusiast based in Karachi, Pakistan. "
+                "GIAIC Certified AI, Metaverse, and Web 3.0 Developer. "
+                "Currently building an autonomous Personal AI Employee (hackathon project). "
+                f"Today: {now.strftime('%B %d, %Y')} | Time: {now.strftime('%I:%M %p')} PKT. "
+                f"Status: {availability} "
+                "If someone asks for his portfolio, GitHub, or LinkedIn, share these:\n"
+                "- Portfolio: https://psqasim-portfolio.vercel.app/\n"
+                "- GitHub: https://github.com/Psqasim\n"
+                "- LinkedIn: https://linkedin.com/in/muhammad-qasim-5bba592b4/\n"
+                "- Email: muhammadqasim0326@gmail.com\n"
+                "Rules: Reply in the SAME language as the incoming message (English, Urdu, or Roman Urdu). "
+                "Keep replies short (1-3 sentences). Be warm and friendly. "
+                "If urgent, acknowledge it and say you will notify Qasim immediately. "
+                "Always sign off: '— Qasim's AI Assistant'"
             ),
             messages=[{
                 "role": "user",
@@ -271,7 +290,7 @@ def generate_reply(sender: str, message: str) -> str:
         return resp.content[0].text.strip()
     except Exception as e:
         logger.warning(f"Claude API error: {e}")
-        return "Qasim is currently busy with work. He'll get back to you soon! — Qasim's Assistant"
+        return "Qasim is currently busy with work. He'll get back to you soon! — Qasim's AI Assistant"
 
 
 def is_urgent(text: str) -> bool:
