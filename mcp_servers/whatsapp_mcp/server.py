@@ -43,15 +43,24 @@ _WSL2_ARGS = [
     "--no-sandbox", "--disable-dev-shm-usage", "--disable-crash-reporter",
     "--disable-background-networking", "--no-zygote",
     "--disable-gpu", "--disable-setuid-sandbox",  # NO --enable-unsafe-swiftshader
+    "--disable-blink-features=AutomationControlled",
 ]
 _CLOUD_HEADLESS_ARGS = [
     "--no-sandbox", "--disable-dev-shm-usage", "--disable-crash-reporter",
     "--disable-background-networking",
     "--disable-gpu", "--enable-unsafe-swiftshader", "--disable-setuid-sandbox",
     "--no-first-run", "--mute-audio",
+    "--disable-blink-features=AutomationControlled",
 ]
 _UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36")
+
+# Stealth JS — mask automation indicators so WhatsApp doesn't block interactions
+_STEALTH_JS = """
+Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+Object.defineProperty(navigator, 'plugins', {get: () => [1,2,3]});
+window.chrome = {runtime: {}};
+"""
 
 
 def _cleanup_stale_chrome_locks(session_path: str) -> None:
@@ -71,6 +80,7 @@ def _cleanup_stale_chrome_locks(session_path: str) -> None:
 
 def _launch_ctx(p, session_path):
     """Launch persistent context. WSL2 and cloud use different arg sets.
+    Includes stealth JS to mask navigator.webdriver (prevents WhatsApp blocking).
 
     WSL2: headless=True + --no-zygote + --disable-gpu (no SwiftShader).
       --enable-unsafe-swiftshader conflicts with --no-zygote → SIGTRAP crash.
@@ -78,23 +88,27 @@ def _launch_ctx(p, session_path):
     """
     _cleanup_stale_chrome_locks(session_path)
     if _IS_WSL2:
-        return p.chromium.launch_persistent_context(
+        ctx = p.chromium.launch_persistent_context(
             user_data_dir=session_path,
             headless=True,
             args=_WSL2_ARGS,
             user_agent=_UA,
             viewport={"width": 1280, "height": 800},
         )
-    return p.chromium.launch_persistent_context(
-        user_data_dir=session_path,
-        headless=HEADLESS,
-        args=_CLOUD_HEADLESS_ARGS if HEADLESS else [
-            "--no-sandbox", "--disable-dev-shm-usage",
-            "--disable-crash-reporter", "--disable-background-networking",
-        ],
-        user_agent=_UA,
-        viewport={"width": 1280, "height": 800},
-    )
+    else:
+        ctx = p.chromium.launch_persistent_context(
+            user_data_dir=session_path,
+            headless=HEADLESS,
+            args=_CLOUD_HEADLESS_ARGS if HEADLESS else [
+                "--no-sandbox", "--disable-dev-shm-usage",
+                "--disable-crash-reporter", "--disable-background-networking",
+                "--disable-blink-features=AutomationControlled",
+            ],
+            user_agent=_UA,
+            viewport={"width": 1280, "height": 800},
+        )
+    ctx.add_init_script(_STEALTH_JS)
+    return ctx
 
 # ── Shared browser lock (same file as whatsapp_watcher.py) ────────────────────
 BROWSER_LOCK_FILE = "/tmp/whatsapp_browser.lock"
@@ -142,7 +156,7 @@ def authenticate_qr() -> Dict[str, Any]:
     Returns:
         Dict with qr_code_base64 and status
     """
-    session_path = os.getenv("WHATSAPP_SESSION_PATH", "/tmp/whatsapp_session")
+    session_path = os.getenv("WHATSAPP_SESSION_PATH", os.path.expanduser("~/.whatsapp_session_dir"))
 
     try:
         with sync_playwright() as p:
@@ -187,7 +201,7 @@ def send_message(chat_id: str, message: str) -> Dict[str, Any]:
     Returns:
         Dict with message_id and sent_at
     """
-    session_path = os.getenv("WHATSAPP_SESSION_PATH")
+    session_path = os.getenv("WHATSAPP_SESSION_PATH", os.path.expanduser("~/.whatsapp_session_dir"))
 
     # Session path must be a directory (launch_persistent_context userDataDir)
     if not session_path or not os.path.isdir(session_path):
@@ -257,7 +271,7 @@ def get_messages(limit: int = 10) -> Dict[str, Any]:
     Returns:
         Dict with list of {sender, message, timestamp, is_unread}
     """
-    session_path = os.getenv("WHATSAPP_SESSION_PATH")
+    session_path = os.getenv("WHATSAPP_SESSION_PATH", os.path.expanduser("~/.whatsapp_session_dir"))
     if not session_path or not os.path.isdir(session_path):
         raise Exception("SESSION_EXPIRED: WhatsApp session directory not found")
 
@@ -348,7 +362,7 @@ def process_inbox(replies: Dict[str, str]) -> Dict[str, Any]:
     Returns:
         Dict with sent list and failed list
     """
-    session_path = os.getenv("WHATSAPP_SESSION_PATH")
+    session_path = os.getenv("WHATSAPP_SESSION_PATH", os.path.expanduser("~/.whatsapp_session_dir"))
     if not session_path or not os.path.isdir(session_path):
         raise Exception("SESSION_EXPIRED: WhatsApp session directory not found")
 

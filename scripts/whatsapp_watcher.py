@@ -304,17 +304,26 @@ def log_action(sender: str, msg: str, reply: str, urgent: bool, sent: bool):
         pass
 
 
+# ── Stealth JS — mask automation indicators so WhatsApp doesn't block us ─────
+_STEALTH_JS = """
+Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+Object.defineProperty(navigator, 'plugins', {get: () => [1,2,3]});
+window.chrome = {runtime: {}};
+"""
+
 # ── Browser helpers ───────────────────────────────────────────────────────────
 def _make_browser(p):
     """Launch a fresh persistent context (closes after each phase).
     --no-zygote is WSL2-only (fixes SIGTRAP crash). On real Linux (cloud/headless)
     it slows Chrome startup and causes 60s selector timeouts — do NOT use it there.
+    Includes stealth JS to mask navigator.webdriver (prevents WhatsApp blocking).
     """
     args = [
         "--no-sandbox",
         "--disable-dev-shm-usage",
         "--disable-crash-reporter",
         "--disable-background-networking",
+        "--disable-blink-features=AutomationControlled",
     ]
     if _IS_WSL2:
         # WSL2: --no-zygote prevents SIGTRAP crash (needed even in headless mode)
@@ -329,13 +338,15 @@ def _make_browser(p):
     ua = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
           "(KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36")
 
-    return p.chromium.launch_persistent_context(
+    ctx = p.chromium.launch_persistent_context(
         user_data_dir=SESSION_PATH,
         headless=HEADLESS,
         args=args,
         user_agent=ua,
         viewport={"width": 1280, "height": 800},
     )
+    ctx.add_init_script(_STEALTH_JS)
+    return ctx
 
 
 def _dismiss_dialogs(page) -> None:

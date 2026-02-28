@@ -24,6 +24,8 @@ module.exports = {
         PYTHONPATH: '/opt/personal-ai-employee',
         ENV_FILE: '.env.cloud',
         PYTHONUNBUFFERED: '1',  // Disable Python output buffering
+        // Needed for WhatsApp MCP notifications (spawned as subprocess)
+        WHATSAPP_SESSION_PATH: '/home/ubuntu/.whatsapp_session_dir',
       },
 
       // Auto-restart configuration
