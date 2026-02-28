@@ -134,8 +134,17 @@ BROWSER_LOCK_FILE = "/tmp/whatsapp_browser.lock"
 
 VAULT_PATH = os.getenv("VAULT_PATH", str(project_root / "vault"))
 
-# WhatsApp Web selectors
-MSG_INPUT   = 'div[contenteditable="true"][data-tab="10"]'
+# WhatsApp Web selectors — multiple fallbacks for message input
+MSG_INPUT_SELECTORS = [
+    'div[contenteditable="true"][data-tab="10"]',
+    'div[contenteditable="true"][data-tab="1"]',
+    'footer div[contenteditable="true"]',
+    'div[aria-label="Type a message"] div[contenteditable="true"]',
+    '[data-testid="conversation-compose-box-input"]',
+    'div[title="Type a message"]',
+]
+# Primary selector (used by wait_for_selector calls that need a single string)
+MSG_INPUT   = ', '.join(MSG_INPUT_SELECTORS)
 CHAT_LIST   = 'div[aria-label="Chat list"], #pane-side'
 # WhatsApp Web updated: QR is now an <img>, not <canvas>. Also detect the
 # "Steps to log in" landing page (login-required / session expired state).
@@ -511,6 +520,57 @@ def _parse_vault_frontmatter(file_path: Path) -> dict:
         return {}
 
 
+def _find_msg_input(page, timeout: int = 15000):
+    """Find the WhatsApp message input box using multiple strategies.
+    Returns the element handle or None."""
+    # Strategy 1: CSS selector list (wait_for_selector supports comma-separated)
+    try:
+        el = page.wait_for_selector(MSG_INPUT, timeout=timeout)
+        if el:
+            return el
+    except Exception:
+        pass
+
+    # Strategy 2: Playwright role-based locator
+    try:
+        box = page.get_by_placeholder(re.compile("type a message", re.IGNORECASE))
+        if box.count() > 0:
+            box.first.wait_for(timeout=5000)
+            return box.first.element_handle()
+    except Exception:
+        pass
+
+    # Strategy 3: Find any contenteditable inside footer
+    try:
+        footer_input = page.locator('footer div[contenteditable="true"]')
+        if footer_input.count() > 0:
+            return footer_input.first.element_handle()
+    except Exception:
+        pass
+
+    # Strategy 4: JS fallback — query DOM directly
+    try:
+        el = page.evaluate_handle("""() => {
+            // Try common selectors
+            const sels = [
+                'footer div[contenteditable="true"]',
+                'div[contenteditable="true"][data-tab]',
+                'div[title="Type a message"]',
+            ];
+            for (const s of sels) {
+                const el = document.querySelector(s);
+                if (el && el.offsetParent !== null) return el;
+            }
+            return null;
+        }""")
+        if el and str(el) != "JSHandle@null":
+            return el.as_element()
+    except Exception:
+        pass
+
+    return None
+
+
 def _open_chat_by_search(page, phone: str) -> bool:
     """
     Open a WhatsApp chat by searching for phone number or contact name.
@@ -583,13 +643,12 @@ def _open_chat_by_search(page, phone: str) -> bool:
                 page.wait_for_timeout(1000)
                 return False
             # Check if message input appeared (= chat opened successfully)
-            msg_input = page.locator(MSG_INPUT)
-            if msg_input.count() > 0:
+            if _find_msg_input(page, timeout=8000):
                 logger.info(f"🔍 Direct URL opened chat: +{digits_only}")
                 return True
             # Wait a bit more on slow VM
             page.wait_for_timeout(5000)
-            if page.locator(MSG_INPUT).count() > 0:
+            if _find_msg_input(page, timeout=5000):
                 logger.info(f"🔍 Direct URL opened chat (slow): +{digits_only}")
                 return True
             logger.warning("Direct URL loaded but message input not found")
@@ -777,8 +836,10 @@ def _send_vault_whatsapp_drafts(page) -> None:
 
             _dismiss_dialogs(page)
 
-            # Wait for message input
-            msg_box = page.wait_for_selector(MSG_INPUT, timeout=20000)
+            # Wait for message input (multi-strategy)
+            msg_box = _find_msg_input(page, timeout=20000)
+            if not msg_box:
+                raise Exception("Message input not found after opening chat")
             msg_box.click()
             page.wait_for_timeout(300)
             msg_box.fill(body)
@@ -974,7 +1035,9 @@ def run_cycle(warm_up: bool = False):
                                 log_action(sender, last_msg, reply, is_urgent(last_msg), False)
                                 continue
 
-                            msg_box = page.wait_for_selector(MSG_INPUT, timeout=15000)
+                            msg_box = _find_msg_input(page, timeout=15000)
+                            if not msg_box:
+                                raise Exception("Message input not found after opening chat")
                             msg_box.click()
                             msg_box.fill(reply)
                             page.wait_for_timeout(500)
