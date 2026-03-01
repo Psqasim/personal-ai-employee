@@ -1,5 +1,5 @@
 """
-WhatsApp Notifier - Send WhatsApp notifications to admin via MCP
+WhatsApp Notifier - Send WhatsApp notifications to admin via vault queue
 
 Notification types:
 - urgent_email: Alert for high-priority email received
@@ -8,9 +8,9 @@ Notification types:
 - morning_summary: Daily 8 AM summary
 - task_completed: Confirmation after successful send
 
-Uses existing WhatsApp MCP server in a thread with 65s timeout.
-Falls back to vault/Logs/Notifications/ log file when Playwright
-is unavailable (e.g. WSL2 /mnt/ filesystem limitation).
+Writes draft files to vault/Approved/WhatsApp/ which the whatsapp_watcher
+picks up and sends in Phase 3.5. This avoids opening a second Chromium
+browser (via MCP) which causes WhatsApp to log out the session.
 
 Author: Personal AI Employee (Platinum Tier)
 Created: 2026-02-17
@@ -18,7 +18,7 @@ Created: 2026-02-17
 
 import os
 import logging
-import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -66,51 +66,42 @@ def _log_notification(label: str, message: str, status: str, error: str = "") ->
         logger.warning(f"[whatsapp_notifier] Could not write notification log: {e}")
 
 
-def _send_in_thread(message: str, label: str) -> None:
+def _send_via_vault(message: str, label: str) -> None:
     """
-    Send WhatsApp message in a background thread with 65s hard timeout.
-    Falls back to vault log if MCP/Playwright fails.
-    Non-blocking — main loop continues immediately.
+    Queue WhatsApp message by writing a draft file to vault/Approved/WhatsApp/.
+    The whatsapp_watcher picks it up in Phase 3.5 and sends it — no second
+    browser needed, so WhatsApp session stays stable.
     """
-    import sys
-    project_root = Path(__file__).parent.parent.parent.parent
-    sys.path.insert(0, str(project_root))
-
     chat_id = _get_admin_number()
     if not chat_id:
         logger.warning(f"[whatsapp_notifier] No WHATSAPP_NOTIFICATION_NUMBER set, skipping {label}")
         return
 
-    def _send():
-        try:
-            from agent_skills.mcp_client import get_mcp_client
-            client = get_mcp_client(timeout=150)  # Headed browser: 30s load + 90s WA init
-            result = client.call_tool(
-                mcp_server="whatsapp-mcp",
-                tool_name="send_message",
-                arguments={"chat_id": chat_id, "message": message},
-                retry_count=1,
-                retry_delay=2
-            )
-            # WhatsApp MCP returns {"message_id": ..., "sent_at": ...} on success
-            if result.get("message_id") or result.get("success"):
-                logger.info(f"[whatsapp_notifier] ✅ Sent {label} via WhatsApp (id={result.get('message_id')})")
-                _log_notification(label, message, "sent")
-            else:
-                err = result.get("error", str(result) or "unknown")
-                logger.warning(f"[whatsapp_notifier] ⚠️ WhatsApp MCP failed {label}: {err}")
-                _log_notification(label, message, "mcp_failed", err)
-        except Exception as e:
-            # Playwright/MCP unavailable — log to vault as fallback
-            logger.warning(
-                f"[whatsapp_notifier] ⚠️ WhatsApp unavailable ({label}), "
-                f"logged to vault/Logs/Notifications/ — {type(e).__name__}: {e}"
-            )
-            _log_notification(label, message, "logged_fallback", str(e))
+    try:
+        vault_path = os.getenv("VAULT_PATH", "vault")
+        wa_dir = Path(vault_path) / "Approved" / "WhatsApp"
+        wa_dir.mkdir(parents=True, exist_ok=True)
 
-    thread = threading.Thread(target=_send, daemon=True, name=f"wa-notify-{label}")
-    thread.start()
-    # Do NOT join — non-blocking by design
+        ts = int(time.time() * 1000)
+        filename = f"NOTIFY_{label}_{ts}.md"
+        draft = (
+            f"---\n"
+            f"action: send_message\n"
+            f"chat_id: \"{chat_id}\"\n"
+            f"draft_body: \"{message}\"\n"
+            f"source: cloud_orchestrator\n"
+            f"label: {label}\n"
+            f"created: \"{datetime.now().isoformat()}\"\n"
+            f"---\n"
+        )
+        (wa_dir / filename).write_text(draft, encoding="utf-8")
+        logger.info(f"[whatsapp_notifier] ✅ Queued {label} → {filename}")
+        _log_notification(label, message, "queued")
+    except Exception as e:
+        logger.warning(
+            f"[whatsapp_notifier] ⚠️ Could not queue {label}: {e}"
+        )
+        _log_notification(label, message, "queue_failed", str(e))
 
 
 def notify_urgent_email(sender: str, subject: str) -> None:
@@ -123,7 +114,7 @@ def notify_urgent_email(sender: str, subject: str) -> None:
         f"Subject: {subject}\n"
         "Action needed: http://localhost:3000/dashboard"
     )
-    _send_in_thread(message, "urgent_email")
+    _send_via_vault(message,"urgent_email")
 
 
 def notify_pending_approvals(count: int, oldest_item: str) -> None:
@@ -135,7 +126,7 @@ def notify_pending_approvals(count: int, oldest_item: str) -> None:
         f"Oldest: {oldest_item}\n"
         "Open dashboard: http://localhost:3000/dashboard"
     )
-    _send_in_thread(message, "pending_approvals")
+    _send_via_vault(message,"pending_approvals")
 
 
 def notify_critical_error(error_message: str) -> None:
@@ -147,7 +138,7 @@ def notify_critical_error(error_message: str) -> None:
         f"Error: {error_message}\n"
         "Check logs: vault/Logs/Cloud/"
     )
-    _send_in_thread(message, "critical_error")
+    _send_via_vault(message,"critical_error")
 
 
 def notify_morning_summary(
@@ -164,7 +155,7 @@ def notify_morning_summary(
         f"✅ Processed yesterday: {processed_yesterday}\n"
         f"💰 API cost today: ${api_cost_today:.4f}"
     )
-    _send_in_thread(message, "morning_summary")
+    _send_via_vault(message,"morning_summary")
 
 
 def notify_task_completed(
@@ -181,4 +172,4 @@ def notify_task_completed(
         f"{task_type} sent to {recipient}"
         f"{subject_line}"
     )
-    _send_in_thread(message, "task_completed")
+    _send_via_vault(message,"task_completed")
