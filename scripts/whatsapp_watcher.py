@@ -884,7 +884,9 @@ def _send_vault_whatsapp_drafts(page) -> None:
                 raise Exception("Message input not found after opening chat")
             msg_box.click()
             page.wait_for_timeout(300)
-            msg_box.fill(body)
+            # insert_text() triggers React's input events (unlike fill())
+            # and doesn't treat \n as Enter/send (unlike type()).
+            page.keyboard.insert_text(body)
             page.wait_for_timeout(500)
             page.keyboard.press("Enter")
             page.wait_for_timeout(2000)
@@ -1048,7 +1050,9 @@ def run_cycle(warm_up: bool = False):
                             if not msg_box:
                                 raise Exception("Message input not found after opening chat")
                             msg_box.click()
-                            msg_box.fill(reply)
+                            # insert_text() triggers React's input events (unlike fill())
+                            # and doesn't treat \n as Enter/send (unlike type()).
+                            page.keyboard.insert_text(reply)
                             page.wait_for_timeout(500)
                             page.keyboard.press("Enter")
                             page.wait_for_timeout(2000)
