@@ -440,10 +440,23 @@ def _wait_for_whatsapp(page) -> bool:
         logger.error(f"Session logged out after load ({page.url}). Re-run wa_reauth.py")
         return False
 
+    # Log page state for debugging stuck loads
+    logger.info(f"WhatsApp page loaded — URL: {page.url} | Title: {page.title()}")
+
     # Use state='attached' (DOM presence) instead of default 'visible' — on Oracle
     # ARM VM the chat list element can be in the DOM but Playwright doesn't consider
     # it "visible" until the full React tree renders, which can exceed 90s.
-    page.wait_for_selector(f'{CHAT_LIST}, {QR_CODE}', timeout=90000, state='attached')
+    try:
+        page.wait_for_selector(f'{CHAT_LIST}, {QR_CODE}', timeout=90000, state='attached')
+    except PlaywrightTimeout:
+        # Log what's on the page so we can diagnose the stuck state
+        logger.error(f"Selector timeout — URL: {page.url} | Title: {page.title()}")
+        try:
+            body_text = page.locator('body').inner_text(timeout=5000)[:300]
+            logger.error(f"Page body: {body_text}")
+        except Exception:
+            pass
+        return False
     # Check any login-required indicator (canvas OR img QR, landing page, phone link)
     # Also check absence of chat list as final fallback (page loaded but no chats = logged out)
     is_login_page = any(
