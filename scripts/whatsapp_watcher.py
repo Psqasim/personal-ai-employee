@@ -1071,7 +1071,10 @@ def run_cycle(warm_up: bool = False):
                 except (PlaywrightTimeout, Exception) as e:
                     logger.warning(f"Cycle error: {e}")
                 finally:
-                    ctx.close()
+                    try:
+                        ctx.close()
+                    except Exception:
+                        pass  # browser may already be dead (OOM, crash)
     except TimeoutError as e:
         logger.warning(f"Browser lock timeout: {e}")
         return
