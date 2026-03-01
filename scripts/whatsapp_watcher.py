@@ -947,8 +947,7 @@ def run_cycle(warm_up: bool = False):
                 page = ctx.new_page()
                 try:
                     if not _wait_for_whatsapp(page):
-                        ctx.close()
-                        return
+                        return  # finally block handles ctx.close()
 
                     # ── Phase 1: Read ──────────────────────────────────────────
                     rows = page.locator('div[aria-label="Chat list"] > div').all()
@@ -1016,14 +1015,12 @@ def run_cycle(warm_up: bool = False):
                     if warm_up:
                         _save_cache()
                         logger.info(f"✅ Warm-up done — {len(_replied_cache)} messages marked as seen.")
-                        ctx.close()
-                        return
+                        return  # finally block handles ctx.close()
 
                     # ── Phase 2: Generate replies (browser stays open, idle) ───
                     pending: list[tuple[str, str, str]] = []
                     if not inbox and not _has_pending_wa_drafts():
-                        ctx.close()
-                        return
+                        return  # finally block handles ctx.close()
 
                     for sender, last_msg in inbox:
                         cmd_reply = handle_admin_command(sender, last_msg)
