@@ -858,11 +858,22 @@ def _send_vault_whatsapp_drafts(page) -> None:
 
     for draft_file in draft_files:
         fm = _parse_vault_frontmatter(draft_file)
-        if fm.get("action") != "send_message":
+        # Accept both cloud-agent format (action: send_message) and
+        # dashboard format (type: whatsapp)
+        if fm.get("action") != "send_message" and fm.get("type") != "whatsapp":
             continue
 
         chat_id = fm.get("chat_id") or fm.get("to", "")
         body    = fm.get("draft_body", "")
+        # Dashboard files store message body in markdown content (after ---)
+        if not body:
+            try:
+                raw = draft_file.read_text(encoding="utf-8")
+                m_body = re.match(r'^---\n.*?\n---\s*\n?(.*)', raw, re.DOTALL)
+                if m_body:
+                    body = m_body.group(1).strip()
+            except Exception:
+                pass
 
         if not chat_id or not body:
             logger.warning(f"Vault WA draft missing chat_id or body: {draft_file.name}")
