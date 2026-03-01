@@ -912,34 +912,41 @@ def run_cycle(warm_up: bool = False):
 
                     for i, row in enumerate(rows[:CHATS_TO_CHECK]):
                         try:
-                            # ── Skip chats with no unread badge ───────────────
-                            # Only process chats WhatsApp marks as unread.
-                            # Exception: admin phone chats are ALWAYS checked —
-                            # Phase-3 opening admin's chat removes the unread badge
-                            # (marks msgs as seen) before Phase-1 can detect them.
+                            # ── Check unread badge BEFORE clicking ────────────
+                            # For non-admin chats, only process if unread badge exists.
+                            # For admin chats, always check (badge removed by Phase-3).
+                            # Problem: can't reliably detect admin from row text
+                            # (contact names like "Muhammad" don't contain digits).
+                            # Solution: check unread badge first; if no badge,
+                            # still click to read sender, then check if admin.
+                            has_unread = False
                             if not warm_up:
-                                try:
-                                    is_admin = _is_admin_row(row.inner_text())
-                                except Exception:
-                                    is_admin = False
-
-                                if not is_admin:
-                                    unread_sels = [
-                                        'span[data-testid="icon-unread-count"]',
-                                        'span[aria-label*="unread"]',
-                                        'div[aria-label*="unread"]',
-                                        '[data-testid*="unread"]',
-                                    ]
-                                    has_unread = any(
-                                        row.locator(s).count() > 0 for s in unread_sels
-                                    )
-                                    if not has_unread:
-                                        logger.debug(f"Chat {i}: no unread badge, skipping")
-                                        continue
+                                unread_sels = [
+                                    'span[data-testid="icon-unread-count"]',
+                                    'span[aria-label*="unread"]',
+                                    'div[aria-label*="unread"]',
+                                    '[data-testid*="unread"]',
+                                ]
+                                has_unread = any(
+                                    row.locator(s).count() > 0 for s in unread_sels
+                                )
 
                             row.click()
                             page.wait_for_timeout(2000)
                             sender   = _read_sender(page, i)
+
+                            # Now that we know the sender, check admin status
+                            if not warm_up and not has_unread:
+                                sender_digits = re.sub(r"[^\d]", "", sender)[-10:]
+                                try:
+                                    from cloud_agent.src.command_router import ADMIN_PHONES
+                                    is_admin = bool(sender_digits and sender_digits in ADMIN_PHONES)
+                                except ImportError:
+                                    is_admin = False
+                                if not is_admin:
+                                    logger.debug(f"Chat {i} ({sender}): no unread badge, skipping")
+                                    continue
+
                             last_msg = _read_last_msg(page)
 
                             if not last_msg:
