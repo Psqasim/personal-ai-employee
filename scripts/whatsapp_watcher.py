@@ -146,7 +146,10 @@ MSG_INPUT_SELECTORS = [
 ]
 # Primary selector (used by wait_for_selector calls that need a single string)
 MSG_INPUT   = ', '.join(MSG_INPUT_SELECTORS)
-CHAT_LIST   = 'div[aria-label="Chat list"], #pane-side'
+CHAT_LIST   = ('div[aria-label="Chat list"], #pane-side, '
+               '[data-testid="chat-list"], [data-testid="chatlist-header"], '
+               'div[aria-label="Search or start a new chat"], '
+               'header span[data-icon="search"]')
 # WhatsApp Web updated: QR is now an <img>, not <canvas>. Also detect the
 # "Steps to log in" landing page (login-required / session expired state).
 QR_CODE     = ('canvas[aria-label="Scan this QR code to link a device!"], '
@@ -950,9 +953,17 @@ def run_cycle(warm_up: bool = False):
                         return  # finally block handles ctx.close()
 
                     # ── Phase 1: Read ──────────────────────────────────────────
+                    # Multiple fallback selectors — WhatsApp Web updates DOM frequently
                     rows = page.locator('div[aria-label="Chat list"] > div').all()
                     if not rows:
                         rows = page.locator('#pane-side > div > div > div').all()
+                    if not rows:
+                        rows = page.locator('[data-testid="chat-list"] > div').all()
+                    if not rows:
+                        rows = page.locator('[data-testid="cell-frame-container"]').all()
+                    if not rows:
+                        # Broadest fallback: any clickable row with role=listitem or row
+                        rows = page.locator('div[role="listitem"], div[role="row"]').all()
                     logger.info(f"Found {len(rows)} chats, checking first {CHATS_TO_CHECK}")
 
                     for i, row in enumerate(rows[:CHATS_TO_CHECK]):
