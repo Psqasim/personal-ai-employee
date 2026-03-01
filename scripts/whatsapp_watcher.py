@@ -482,6 +482,22 @@ def _read_sender(page, i: int) -> str:
 
 
 def _read_last_msg(page) -> str:
+    """Read the most recent incoming message. Scrolls to bottom first
+    to ensure WhatsApp Web shows the latest messages (it remembers
+    scroll position from previous visits)."""
+    # Scroll chat to bottom — press End key in the message pane
+    try:
+        pane = page.locator('div[data-testid="conversation-panel-messages"]')
+        if pane.count() > 0:
+            pane.first.press("End")
+            page.wait_for_timeout(500)
+        else:
+            # Fallback: press End on the page
+            page.keyboard.press("End")
+            page.wait_for_timeout(500)
+    except Exception:
+        pass
+
     for msg_sel in [
         'div.message-in span.selectable-text',
         'div[class*="message-in"] span.selectable-text',
