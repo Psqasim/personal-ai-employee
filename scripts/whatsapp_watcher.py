@@ -2,12 +2,13 @@
 """
 WhatsApp Watcher - Platinum Tier Auto-Reply Bot
 
-3-phase cycle every 30s:
-  Phase 1 (browser): open → read all chats → close
-  Phase 2 (no browser): generate Claude replies
-  Phase 3 (browser): open → send all replies → close
+Single-browser cycle every 30s:
+  Phase 1: read all chats (browser open)
+  Phase 2: generate Claude replies (browser stays open, idle)
+  Phase 3: send all replies (same browser session)
 
-Splitting avoids browser crash while Claude API is running (30-60s).
+Browser stays open for entire cycle to prevent WhatsApp session
+logout on datacenter IPs (closing + reopening triggers anti-bot).
 Runs as PM2 locally OR on Oracle Cloud (headless=True on Linux server).
 Enable: ENABLE_WHATSAPP_WATCHER=true in .env
 
@@ -893,12 +894,14 @@ def _has_pending_wa_drafts() -> bool:
 # ── Core cycle ───────────────────────────────────────────────────────────────
 def run_cycle(warm_up: bool = False):
     """
-    3-phase cycle — browser is closed before Claude API is called,
-    so long API calls never crash the browser:
+    Single-browser cycle — browser stays open for the entire read→reply→send
+    flow to avoid WhatsApp session logout on datacenter IPs.
 
-    Phase 1 (browser open):  Read messages from first N chats → close browser
-    Phase 2 (no browser):    Generate Claude replies for each message
-    Phase 3 (browser open):  Send each reply in the correct chat → close browser
+    Phase 1 (browser open):  Read messages from first N chats
+    Phase 2 (browser idle):  Generate Claude replies (browser stays open)
+    Phase 3 (same browser):  Send each reply in the correct chat
+    Phase 3.5:               Send any vault/Approved/WhatsApp/ drafts
+    Close browser.
 
     warm_up=True: Phase 1 only — populate cache without sending any replies.
     Used on startup to skip old/pre-existing messages.
@@ -907,7 +910,6 @@ def run_cycle(warm_up: bool = False):
         logger.error(f"Session missing: {SESSION_PATH} — run setup_whatsapp_session.py")
         return
 
-    # ── Phase 1: Read (locked) ────────────────────────────────────────────────
     inbox: list[tuple[str, str]] = []   # (sender, last_msg)
     _seen_this_cycle: set = set()       # deduplicate within one cycle
 
@@ -921,6 +923,7 @@ def run_cycle(warm_up: bool = False):
                         ctx.close()
                         return
 
+                    # ── Phase 1: Read ──────────────────────────────────────────
                     rows = page.locator('div[aria-label="Chat list"] > div').all()
                     if not rows:
                         rows = page.locator('#pane-side > div > div > div').all()
@@ -928,13 +931,6 @@ def run_cycle(warm_up: bool = False):
 
                     for i, row in enumerate(rows[:CHATS_TO_CHECK]):
                         try:
-                            # ── Check unread badge BEFORE clicking ────────────
-                            # For non-admin chats, only process if unread badge exists.
-                            # For admin chats, always check (badge removed by Phase-3).
-                            # Problem: can't reliably detect admin from row text
-                            # (contact names like "Muhammad" don't contain digits).
-                            # Solution: check unread badge first; if no badge,
-                            # still click to read sender, then check if admin.
                             has_unread = False
                             if not warm_up:
                                 unread_sels = [
@@ -949,9 +945,8 @@ def run_cycle(warm_up: bool = False):
 
                             row.click()
                             page.wait_for_timeout(2000)
-                            sender   = _read_sender(page, i)
+                            sender = _read_sender(page, i)
 
-                            # Now that we know the sender, check admin status
                             if not warm_up and not has_unread:
                                 sender_digits = re.sub(r"[^\d]", "", sender)[-10:]
                                 try:
@@ -977,7 +972,6 @@ def run_cycle(warm_up: bool = False):
                             _seen_this_cycle.add(cache_key)
 
                             if warm_up:
-                                # Dry-run: mark as seen but don't reply
                                 _replied_cache.add(cache_key)
                                 logger.info(f"[WARMUP] Skipped existing: {sender}")
                                 continue
@@ -992,65 +986,32 @@ def run_cycle(warm_up: bool = False):
                         except Exception as e:
                             logger.debug(f"Read error chat {i}: {e}")
 
-                except (PlaywrightTimeout, Exception) as e:
-                    logger.warning(f"Phase-1 error: {e}")
-                finally:
-                    ctx.close()   # ← browser fully closed before API calls
-    except TimeoutError as e:
-        logger.warning(f"Phase-1 lock timeout: {e}")
-        return
-
-    if warm_up:
-        _save_cache()
-        logger.info(f"✅ Warm-up done — {len(_replied_cache)} messages marked as seen. No replies sent.")
-        return
-
-    pending: list[tuple[str, str, str]] = []   # (sender, last_msg, reply)
-
-    if not inbox:
-        # No new messages — only proceed to Phase-3 if vault WA drafts need sending.
-        # (Phase-3 row_map building opens ALL chats and marks them as "seen",
-        #  which is why this guard matters: only open browser when necessary.)
-        if not _has_pending_wa_drafts():
-            return
-        logger.info("No new replies — running Phase-3 only to flush vault WA drafts")
-    else:
-        # ── Phase 2: Generate replies (no browser, lock released) ─────────────────
-        for sender, last_msg in inbox:
-            # Check for admin commands FIRST — if matched, skip normal reply
-            cmd_reply = handle_admin_command(sender, last_msg)
-            if cmd_reply is not None:
-                reply = cmd_reply
-            else:
-                reply = generate_reply(sender, last_msg)
-            logger.info(f"💬 {sender} → {reply[:60]}")
-            pending.append((sender, last_msg, reply))
-
-    # Give Chrome time to finish flushing the Phase-1 profile to disk.
-    # On Oracle Free Tier (slow I/O), opening Chrome too quickly after Phase-1
-    # closes causes the profile dir to be in a partial-write state → Phase-3
-    # Chrome never fully initialises → WhatsApp Web never loads → 60s timeout.
-    # 20s (was 10s) — Oracle Cloud ARM disk I/O is slower than expected.
-    time.sleep(20)
-
-    # ── Phase 3: Send (locked) ────────────────────────────────────────────────
-    try:
-        with _browser_lock():
-            with sync_playwright() as p:
-                ctx = _make_browser(p)
-                page = ctx.new_page()
-                try:
-                    if not _wait_for_whatsapp(page):
+                    if warm_up:
+                        _save_cache()
+                        logger.info(f"✅ Warm-up done — {len(_replied_cache)} messages marked as seen.")
                         ctx.close()
                         return
 
+                    # ── Phase 2: Generate replies (browser stays open, idle) ───
+                    pending: list[tuple[str, str, str]] = []
+                    if not inbox and not _has_pending_wa_drafts():
+                        ctx.close()
+                        return
+
+                    for sender, last_msg in inbox:
+                        cmd_reply = handle_admin_command(sender, last_msg)
+                        if cmd_reply is not None:
+                            reply = cmd_reply
+                        else:
+                            reply = generate_reply(sender, last_msg)
+                        logger.info(f"💬 {sender} → {reply[:60]}")
+                        pending.append((sender, last_msg, reply))
+
+                    # ── Phase 3: Send (same browser, no reopen) ────────────────
                     for sender, last_msg, reply in pending:
                         sent = False
                         try:
-                            # Use search to open the correct chat — far more reliable
-                            # than the old row_map approach which clicked stale DOM
-                            # elements and sent replies to the wrong person.
-                            search_q = sender  # already normalized phone or contact name
+                            search_q = sender
                             if not _open_chat_by_search(page, search_q):
                                 logger.warning(f"⚠️ Could not find chat for {sender} — skipping send")
                                 cache_key = f"{sender}:{last_msg[:50]}"
@@ -1076,18 +1037,18 @@ def run_cycle(warm_up: bool = False):
                         log_action(sender, last_msg, reply, is_urgent(last_msg), sent)
 
                     # Phase 3.5 — Send any vault/Approved/WhatsApp/ drafts
-                    # (admin "send message to X" commands land here)
                     try:
                         _send_vault_whatsapp_drafts(page)
                     except Exception as e:
                         logger.warning(f"Vault WA drafts error: {e}")
 
                 except (PlaywrightTimeout, Exception) as e:
-                    logger.warning(f"Phase-3 error: {e}")
+                    logger.warning(f"Cycle error: {e}")
                 finally:
                     ctx.close()
     except TimeoutError as e:
-        logger.warning(f"Phase-3 lock timeout: {e}")
+        logger.warning(f"Browser lock timeout: {e}")
+        return
 
     _save_cache()
 
