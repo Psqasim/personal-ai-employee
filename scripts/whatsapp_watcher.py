@@ -426,8 +426,20 @@ def _dismiss_dialogs(page) -> None:
 def _wait_for_whatsapp(page) -> bool:
     """Navigate to WhatsApp Web and wait for chat list. Returns False if QR shown."""
     page.goto("https://web.whatsapp.com", wait_until="domcontentloaded", timeout=40000)
+
+    # Fast-fail: if WhatsApp redirected to ?logout_reason=... the session is dead.
+    if "logout_reason" in page.url:
+        logger.error(f"Session forcefully logged out ({page.url}). Re-run wa_reauth.py")
+        return False
+
     # Cloud VM (headless) needs more time for JS-heavy WhatsApp Web to initialise
     page.wait_for_timeout(20000 if HEADLESS else 4000)
+
+    # Check URL again after JS-driven redirect during wait
+    if "logout_reason" in page.url:
+        logger.error(f"Session logged out after load ({page.url}). Re-run wa_reauth.py")
+        return False
+
     # Use state='attached' (DOM presence) instead of default 'visible' — on Oracle
     # ARM VM the chat list element can be in the DOM but Playwright doesn't consider
     # it "visible" until the full React tree renders, which can exceed 90s.
