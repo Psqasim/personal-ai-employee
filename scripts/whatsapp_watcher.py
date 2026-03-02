@@ -572,14 +572,9 @@ def _type_and_send_message(page, text: str) -> bool:
     Uses multiple methods to ensure React actually registers the text.
     Returns True if the message was likely sent (input cleared after Enter).
     """
-    # Step 1: Close any open search panel / overlay first
-    try:
-        page.keyboard.press("Escape")
-        page.wait_for_timeout(1000)
-    except Exception:
-        pass
-
-    # Step 2: Find and click the compose box
+    # Step 1: Find and click the compose box
+    # NOTE: Do NOT press Escape here — it closes the chat that was just opened!
+    # The search panel is already dismissed by _open_chat_by_search().
     msg_box = _find_msg_input(page, timeout=15000)
     if not msg_box:
         raise Exception("Message input not found")
