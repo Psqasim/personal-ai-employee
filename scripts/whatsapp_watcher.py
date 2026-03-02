@@ -572,104 +572,135 @@ def _type_and_send_message(page, text: str) -> bool:
     Uses multiple methods to ensure React actually registers the text.
     Returns True if the message was likely sent (input cleared after Enter).
     """
+    # Step 1: Close any open search panel / overlay first
+    try:
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(1000)
+    except Exception:
+        pass
+
+    # Step 2: Find and click the compose box
     msg_box = _find_msg_input(page, timeout=15000)
     if not msg_box:
         raise Exception("Message input not found")
 
     msg_box.click()
-    page.wait_for_timeout(300)
+    page.wait_for_timeout(500)
 
-    typed = False
-
-    # Method 1: execCommand('insertText') — best for contenteditable + React
-    # This triggers beforeinput/input events that React's synthetic event system listens to
-    if not typed:
-        try:
-            result = page.evaluate("""(text) => {
-                const sels = [
-                    'div[contenteditable="true"][data-tab="10"]',
-                    'div[contenteditable="true"][data-tab="1"]',
-                    'footer div[contenteditable="true"]',
-                    '[data-testid="conversation-compose-box-input"]',
-                ];
-                let el = null;
-                for (const s of sels) {
-                    el = document.querySelector(s);
-                    if (el) break;
-                }
-                if (!el) el = document.activeElement;
-                if (!el || !el.isContentEditable) return false;
-                el.focus();
-                // execCommand triggers proper input events for React
-                document.execCommand('insertText', false, text);
-                return el.textContent.trim().length > 0;
-            }""", text)
-            if result:
-                typed = True
-                logger.debug("Message typed via execCommand")
-        except Exception as e:
-            logger.debug(f"execCommand failed: {e}")
-
-    # Method 2: keyboard.type() — character by character (proven in search)
-    # Strips newlines to avoid premature Enter-sends
-    if not typed:
-        try:
-            msg_box.click()
-            page.wait_for_timeout(200)
-            clean = text.replace('\n', ' ').replace('\r', '')
-            page.keyboard.type(clean, delay=10)
-            typed = True
-            logger.debug("Message typed via keyboard.type()")
-        except Exception as e:
-            logger.debug(f"keyboard.type() failed: {e}")
-
-    # Method 3: insert_text() — last resort
-    if not typed:
-        try:
-            msg_box.click()
-            page.wait_for_timeout(200)
-            page.keyboard.insert_text(text)
-            typed = True
-            logger.debug("Message typed via insert_text()")
-        except Exception as e:
-            logger.debug(f"insert_text() failed: {e}")
-
-    if not typed:
-        raise Exception("All typing methods failed")
-
-    # Verify text appeared in the input before pressing Enter
-    page.wait_for_timeout(300)
+    # Step 3: Debug — dump all contenteditable elements on the page
     try:
-        input_text = page.evaluate("""() => {
+        ce_info = page.evaluate("""() => {
+            const all = document.querySelectorAll('div[contenteditable="true"]');
+            return Array.from(all).map(el => ({
+                tab: el.getAttribute('data-tab'),
+                testid: el.getAttribute('data-testid'),
+                role: el.getAttribute('role'),
+                placeholder: el.getAttribute('data-placeholder') || el.getAttribute('aria-placeholder') || '',
+                inFooter: !!el.closest('footer'),
+                text: el.textContent.trim().substring(0, 30),
+            }));
+        }""")
+        logger.info(f"📋 Contenteditable elements on page: {ce_info}")
+    except Exception as e:
+        logger.debug(f"CE dump failed: {e}")
+
+    # Step 4: Try typing methods — each one verifies text appeared
+    clean_text = text.replace('\n', ' ').replace('\r', '')
+    methods = []
+
+    # Method A: Click compose box + keyboard.type() (proven to work in search)
+    def method_type():
+        msg_box.click()
+        page.wait_for_timeout(300)
+        page.keyboard.press("Control+a")
+        page.keyboard.press("Delete")
+        page.wait_for_timeout(200)
+        page.keyboard.type(clean_text, delay=10)
+    methods.append(("keyboard.type()", method_type))
+
+    # Method B: execCommand via JS (direct DOM manipulation)
+    def method_execcommand():
+        page.evaluate("""() => {
+            // Find the compose box specifically (not search input)
             const sels = [
-                'div[contenteditable="true"][data-tab="10"]',
-                'div[contenteditable="true"][data-tab="1"]',
-                'footer div[contenteditable="true"]',
                 '[data-testid="conversation-compose-box-input"]',
+                'div[contenteditable="true"][data-tab="10"]',
+                'footer div[contenteditable="true"]',
+                'div[contenteditable="true"][role="textbox"]',
             ];
             for (const s of sels) {
                 const el = document.querySelector(s);
-                if (el && el.textContent.trim()) return el.textContent.trim();
+                if (el) { el.focus(); el.click(); return; }
             }
-            return '';
         }""")
-        if not input_text:
-            logger.warning("⚠️ Message input is EMPTY after typing — text not registered by WhatsApp")
-            return False
-        logger.debug(f"Input verified: {input_text[:40]}...")
-    except Exception:
-        pass  # verification failed but proceed anyway
+        page.wait_for_timeout(300)
+        page.evaluate("""(text) => {
+            document.execCommand('selectAll');
+            document.execCommand('delete');
+            document.execCommand('insertText', false, text);
+        }""", clean_text)
+    methods.append(("execCommand", method_execcommand))
 
-    # Press Enter to send
+    # Method C: insert_text (fallback)
+    def method_insert():
+        msg_box.click()
+        page.wait_for_timeout(300)
+        page.keyboard.press("Control+a")
+        page.keyboard.press("Delete")
+        page.wait_for_timeout(200)
+        page.keyboard.insert_text(text)
+    methods.append(("insert_text()", method_insert))
+
+    for name, method_fn in methods:
+        try:
+            method_fn()
+            page.wait_for_timeout(500)
+
+            # Verify text appeared in the compose box
+            has_text = page.evaluate("""() => {
+                const sels = [
+                    '[data-testid="conversation-compose-box-input"]',
+                    'div[contenteditable="true"][data-tab="10"]',
+                    'footer div[contenteditable="true"]',
+                    'div[contenteditable="true"][role="textbox"]',
+                ];
+                for (const s of sels) {
+                    const el = document.querySelector(s);
+                    if (el && el.textContent.trim().length > 0) return el.textContent.trim().substring(0, 50);
+                }
+                // Also check any contenteditable that has text
+                const all = document.querySelectorAll('div[contenteditable="true"]');
+                for (const el of all) {
+                    if (el.textContent.trim().length > 5) return 'other:' + el.textContent.trim().substring(0, 50);
+                }
+                return '';
+            }""")
+            if has_text:
+                logger.info(f"✅ Text typed via {name}: {has_text[:40]}")
+                break
+            else:
+                logger.warning(f"⚠️ {name}: input still empty after typing")
+        except Exception as e:
+            logger.warning(f"⚠️ {name} failed: {e}")
+    else:
+        # All methods failed — dump page state for debugging
+        try:
+            body = page.locator('body').inner_text(timeout=5000)[:200]
+            logger.error(f"❌ All typing methods failed. Page body: {body}")
+        except Exception:
+            pass
+        return False
+
+    # Step 5: Press Enter to send
     page.keyboard.press("Enter")
     page.wait_for_timeout(2000)
 
-    # Verify input cleared (= WhatsApp consumed the message)
+    # Step 6: Verify input cleared (= message was consumed by WhatsApp)
     try:
         remaining = page.evaluate("""() => {
             const sels = [
+                '[data-testid="conversation-compose-box-input"]',
                 'div[contenteditable="true"][data-tab="10"]',
-                'div[contenteditable="true"][data-tab="1"]',
                 'footer div[contenteditable="true"]',
             ];
             for (const s of sels) {
@@ -679,7 +710,7 @@ def _type_and_send_message(page, text: str) -> bool:
             return '';
         }""")
         if remaining:
-            logger.warning(f"⚠️ Input NOT empty after Enter — message may not have sent: {remaining[:40]}")
+            logger.warning(f"⚠️ Input NOT empty after Enter: {remaining[:40]}")
             return False
     except Exception:
         pass
