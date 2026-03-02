@@ -1,388 +1,434 @@
 # Personal AI Employee
 
-> Your autonomous task management assistant that monitors an Obsidian vault and maintains an always-up-to-date dashboard.
+> **Your autonomous Digital FTE that manages email, WhatsApp, LinkedIn, and Odoo accounting — 24/7 on Oracle Cloud, with human-in-the-loop approval.**
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Next.js 16](https://img.shields.io/badge/Next.js-16.1.6-black.svg)](https://nextjs.org/)
+[![Claude AI](https://img.shields.io/badge/Claude-Opus%204.6-blueviolet.svg)](https://anthropic.com)
+[![Oracle Cloud](https://img.shields.io/badge/Oracle_Cloud-Always_On-red.svg)](https://cloud.oracle.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
-[![Tested](https://img.shields.io/badge/tests-passing-brightgreen.svg)](docs/bronze/bronze-testing.md)
+
+**Built for:** GIAIC Personal AI Employee Hackathon 2026 (Q4)
+**Developer:** Muhammad Qasim (Solo + Claude Code)
+**Status:** Production Running on Oracle Cloud VM 24/7
+
+---
+
+## Demo Video
+
+> **[Watch the Demo (YouTube)](https://youtu.be/PLACEHOLDER)** — 5-minute walkthrough of all features
+
+---
+
+## What Is This?
+
+A **Digital Full-Time Employee (FTE)** that works 24/7 managing your business operations:
+
+- Watches your **Gmail** for important emails and drafts AI replies
+- Monitors **WhatsApp** and auto-replies with context-aware AI responses
+- Generates **LinkedIn** posts aligned with your business goals
+- Creates **Odoo invoices, contacts, payments, and purchase bills**
+- Sends you **WhatsApp notifications** for urgent items
+- Generates **weekly CEO Briefings** with AI insights
+- Accepts **natural language commands** via CLI or WhatsApp (`"invoice Ali 5000 Rs"`)
+- All sensitive actions require **human approval** before execution
+
+**Cost comparison:** A human employee works ~2,000 hrs/year at ~$5/task. This AI employee works **8,760 hrs/year at ~$0.50/task** — an 85-90% cost reduction.
+
+---
+
+## Hackathon Completion Status
 
 | Tier | Status | Highlights |
 |------|--------|------------|
-| **Bronze** | ✅ Complete | 100% offline vault monitoring, auto dashboard |
-| **Silver** | ✅ Complete | AI priority analysis, task categorization, Gmail watcher |
-| **Gold** | ✅ Complete | **Email ✅, Odoo ✅, WhatsApp ✅, LinkedIn ✅ MCP live** |
-| **Platinum** | ✅ Complete | Oracle Cloud VM 24/7, WhatsApp AI auto-reply, admin notifications |
-| **Hackathon+** | ✅ Complete | **NL commands, A2A orchestration, Odoo invoices/contacts/payments/bills** |
+| **Bronze** | ✅ Complete | Obsidian vault monitoring, auto-dashboard, event logging, 100% offline |
+| **Silver** | ✅ Complete | AI priority analysis, task categorization, Gmail watcher, PII sanitization |
+| **Gold** | ✅ Complete | Email + WhatsApp + LinkedIn + Odoo MCP servers, CEO Briefing, Ralph Wiggum loop |
+| **Platinum** | ✅ Complete | Oracle Cloud VM 24/7, WhatsApp AI auto-reply, admin notifications, stale recovery |
+| **Hackathon+** | ✅ Complete | Natural language commands, A2A orchestration, Odoo contacts/payments/bills |
+
+**All 5 tiers completed. Production running on Oracle Cloud.**
 
 ---
 
-## 🎬 Demo Evidence (Live Testing Results)
+## Architecture
 
-**Hackathon+ Status:** ✅ **Production Running** — Oracle Cloud VM live 24/7, WhatsApp AI auto-reply, Natural Language Commands, A2A orchestration
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        ORACLE CLOUD VM (24/7)                       │
+│                        ubuntu@129.151.151.212                       │
+│                                                                     │
+│   PM2 Process Manager (3 processes, always on)                      │
+│   ┌─────────────────────┐  ┌──────────────┐  ┌──────────────────┐  │
+│   │  cloud_orchestrator │  │ git_sync     │  │ whatsapp_watcher │  │
+│   │  • Gmail watcher    │  │ • Pull every │  │ • Playwright     │  │
+│   │  • AI draft replies │  │   60 seconds │  │ • AI auto-reply  │  │
+│   │  • Command router   │  │ • Push vault │  │ • Admin commands │  │
+│   │  • CEO briefings    │  │   changes    │  │ • Notifications  │  │
+│   └────────┬────────────┘  └──────┬───────┘  └────────┬─────────┘  │
+│            │                      │                    │            │
+│            └──────────────────────┼────────────────────┘            │
+│                                   │                                 │
+└───────────────────────────────────┼─────────────────────────────────┘
+                                    │
+                              GitHub (git sync)
+                                    │
+┌───────────────────────────────────┼─────────────────────────────────┐
+│                                   │                                 │
+│                    YOUR LAPTOP / WSL2 (Local)                       │
+│                                                                     │
+│   ┌──────────────────────┐  ┌─────────────────────────────────┐    │
+│   │  PM2: approval       │  │  Next.js Dashboard (:3000)      │    │
+│   │  handler             │  │  • Glassmorphism UI             │    │
+│   │  • Scan Approved/    │  │  • Approve/Reject pending items │    │
+│   │  • Send via SMTP     │  │  • Quick Create (Email/WA/Odoo) │    │
+│   │  • Execute Odoo API  │  │  • Vault Browser               │    │
+│   │  • Move to Done/     │  │  • API Usage Charts            │    │
+│   └──────────────────────┘  │  • MCP Server Status           │    │
+│                              │  • CEO Briefings               │    │
+│   ┌──────────────────────┐  │  • User Management (RBAC)      │    │
+│   │  7 MCP Servers       │  └─────────────────────────────────┘    │
+│   │  • Email (SMTP)      │                                         │
+│   │  • WhatsApp          │  ┌─────────────────────────────────┐    │
+│   │  • LinkedIn          │  │  Obsidian Vault (shared state)  │    │
+│   │  • Odoo (XML-RPC)    │  │  Inbox/ → Needs_Action/ →      │    │
+│   │  • Twitter           │  │  Pending_Approval/ → Approved/  │    │
+│   │  • Facebook          │  │  → Done/ (or Failed/)           │    │
+│   │  • Instagram         │  └─────────────────────────────────┘    │
+│   └──────────────────────┘                                         │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
 
-### Working Integrations (Live Tested)
+### Data Flow
+
+```
+1. INPUT        Gmail / WhatsApp / CLI command / Dashboard Quick Create
+                              │
+2. PERCEPTION   Watcher detects new item → creates vault .md file
+                              │
+3. REASONING    Claude AI analyzes → generates draft response
+                              │
+4. APPROVAL     Human reviews in Dashboard → Approve or Reject
+                              │
+5. ACTION       MCP server executes (send email, WhatsApp, create invoice)
+                              │
+6. AUDIT        Logged to vault/Logs/MCP_Actions/ → moved to Done/
+```
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| **AI Brain** | Claude API (Haiku for speed, Opus for reasoning) |
+| **Dashboard** | Next.js 16 + React 19 + Tailwind CSS v4 + TypeScript 5 |
+| **UI Design** | iOS 26 Liquid Glass (glassmorphism, dark mode, particle background) |
+| **Animation** | Framer Motion + React Parallax Tilt + Recharts |
+| **Auth** | NextAuth v5 beta (credentials, bcrypt, RBAC: admin/viewer) |
+| **Backend** | Python 3.11 (watchers, orchestrator, MCP servers) |
+| **Browser Automation** | Playwright (WhatsApp Web — headless Chromium) |
+| **Accounting** | Odoo Community (XML-RPC API — invoices, contacts, payments, bills) |
+| **Process Manager** | PM2 (auto-restart, log rotation, health monitoring) |
+| **Cloud** | Oracle Cloud Free Tier VM (ARM Ampere A1, Ubuntu 22.04) |
+| **Vault/State** | Obsidian Markdown + YAML frontmatter (file-based state machine) |
+| **Sync** | Git (GitHub — cloud pulls every 60s, local pushes changes) |
+| **Email** | SMTP (Gmail App Password) + Nodemailer |
+
+---
+
+## Features
+
+### Bronze Tier — Foundation
+- [x] Automatic file detection — monitors Inbox/ every 30 seconds
+- [x] Dashboard auto-update — maintains task table with wiki links
+- [x] Event logging — all actions logged to vault/Logs/
+- [x] Atomic writes — no data corruption, timestamped backups
+- [x] Agent Skills API — query vault from Claude Code
+- [x] 100% offline — no network requests, all local processing
+- [x] Obsidian compatible — standard markdown, preserves formatting
+
+### Silver Tier — AI-Powered
+- [x] AI priority analysis — Claude assigns High/Medium/Low priority
+- [x] Task categorization — Work / Personal / Urgent auto-classification
+- [x] 24h response caching — minimizes API costs (<$0.01/day)
+- [x] PII sanitization — emails, phones stripped before API calls
+- [x] Gmail watcher — monitors important emails, creates vault tasks
+- [x] Graceful fallback — reverts to Bronze when API unavailable
+
+### Gold Tier — Autonomous Execution
+- [x] Email automation — AI drafts, human approves, SMTP sends via MCP
+- [x] WhatsApp automation — Playwright, keyword detection, approval workflow
+- [x] LinkedIn automation — business-aligned posts, rate limiting
+- [x] Odoo integration — draft invoices/expenses (NEVER auto-confirms)
+- [x] CEO Briefing — weekly analytics with AI insights and cost tracking
+- [x] Ralph Wiggum loop — bounded multi-step execution (max 10 iterations)
+- [x] 7 MCP servers — email, whatsapp, linkedin, odoo, twitter, facebook, instagram
+- [x] Comprehensive logging — all MCP actions logged BEFORE execution
+
+### Platinum Tier — Always-On Cloud
+- [x] Oracle Cloud VM — 3 PM2 processes running 24/7
+- [x] WhatsApp admin notifications — 5 types (urgent, pending, error, morning summary, task complete)
+- [x] Non-blocking architecture — WhatsApp sends in daemon threads (65s timeout)
+- [x] Stale file recovery — hourly scan, auto-moves stuck files back to queue
+- [x] Git auto-sync — cloud pulls every 60s, pushes vault changes
+- [x] Agent-to-Agent delegation — cloud drafts, local executes
+
+### Hackathon+ — Natural Language Commands
+- [x] Natural language command router — Claude-powered intent extraction, 8 action types
+- [x] CLI interface — `python scripts/natural_command.py "invoice Ali 5000 Rs"`
+- [x] WhatsApp commands — admin sends `!invoice Ali 5000` from phone
+- [x] A2A orchestration — cloud writes Needs_Action/, local claims and executes
+- [x] Odoo: create contacts, register payments, purchase bills
+- [x] YAML-safe escaping — handles quotes and special characters in AI content
+
+### Next.js Dashboard
+- [x] Glassmorphism UI — frosted glass cards, particle background, dark mode
+- [x] Quick Create modal — Email, WhatsApp, Invoice, LinkedIn in one click
+- [x] Vault Browser — browse all vault folders and file contents
+- [x] API Usage Charts — daily token usage, costs, call counts (Recharts)
+- [x] MCP Server Status — real-time health grid for all servers
+- [x] CEO Briefings page — weekly business summaries (admin only)
+- [x] User management — create users, change roles, RBAC (admin/viewer)
+- [x] Responsive design — works on mobile and desktop
+
+---
+
+## Working Integrations (Live Tested)
 
 | Integration | Status | Evidence |
 |-------------|--------|----------|
-| **📧 Email (SMTP)** | ✅ **WORKING** | Email sent & delivered to Gmail inbox |
-| **📊 Odoo Accounting** | ✅ **WORKING** | Draft invoices, contacts, payments, bills via XML-RPC |
-| **💬 WhatsApp Auto-Reply** | ✅ **WORKING** | AI replies generated & sent on Oracle Cloud VM (Playwright) |
-| **🤖 WhatsApp Commands** | ✅ **WORKING** | `!invoice Ali 5000` → vault draft created + confirmation sent |
-| **🧠 Natural Language CLI** | ✅ **WORKING** | `natural_command.py "invoice Ali 5000 Rs"` → draft in <3s |
-| **☁️ Oracle Cloud VM** | ✅ **WORKING** | 3 PM2 processes running 24/7 (orchestrator, git_sync, watcher) |
-| **🔄 A2A Orchestration** | ✅ **WORKING** | Cloud writes Needs_Action/ → local claims → executes → Done/ |
-| 🔗 LinkedIn | ⏸️ Token scope | MCP implemented, API token needs extra permissions |
-| 🐦 Twitter | ⏸️ API credit | MCP implemented, needs $5 API tier upgrade |
-
-**Note:** All 5 MCP servers fully implemented. LinkedIn/Twitter blocked by external API limitations only (not code). Email, Odoo, WhatsApp, and the full A2A pipeline are working end-to-end.
-
-### Screenshots
-
-**Email Automation Test:**
-![Email Sent Successfully](public/emailTest.png)
-*Real email sent via SMTP MCP - delivered to muhammadqasim0326@gmail.com*
-
-**MCP Servers Status:**
-![All 5 MCP Servers Operational](public/mcptest.png)
-*✅ All MCP servers responding: Email, LinkedIn, WhatsApp, Twitter, Odoo*
-
-**Odoo Accounting Integration:**
-![Draft Invoice Created](public/odootest.png)
-*Draft invoice INV/2026/00001 created (100.00 PKR) - draft-only safety mode*
-
-**Obsidian Dashboard:**
-![Task Dashboard](public/obsidianDasbboard.png)
-*Enhanced dashboard with emoji indicators and real-time task tracking*
-
-**Approval Workflow:**
-![Email Approval Process](public/obsidanApprovalEmail.png)
-*Human-in-the-loop approval system - email draft pending approval*
-
-**Test Results:**
-- ✅ 47/48 automated tests passing (97% coverage)
-- ✅ All 5 MCP servers operational (100% connectivity)
-- ✅ 6/9 integrations fully working end-to-end (Email, Odoo, WhatsApp, Commands, CLI, A2A)
-- ✅ Safety gates enforced (approval workflow, bounded loops, audit logging)
-- ✅ Oracle Cloud VM running stable — 3 PM2 processes, git auto-sync every 60s
-
-📄 **Full Validation Report:** [docs/reports/HACKATHON-FINAL-SUBMISSION.md](docs/reports/HACKATHON-FINAL-SUBMISSION.md)
+| **Email (SMTP)** | ✅ Working | Emails sent and delivered to Gmail inbox |
+| **Odoo Accounting** | ✅ Working | Draft invoices, contacts, payments, bills via XML-RPC |
+| **WhatsApp Auto-Reply** | ✅ Working | AI replies generated and sent on Oracle Cloud VM |
+| **WhatsApp Commands** | ✅ Working | `!invoice Ali 5000` → vault draft + confirmation |
+| **Natural Language CLI** | ✅ Working | `natural_command.py "invoice Ali 5000 Rs"` → draft in <3s |
+| **Oracle Cloud VM** | ✅ Working | 3 PM2 processes running 24/7 |
+| **A2A Orchestration** | ✅ Working | Cloud writes → local claims → executes → Done/ |
+| **Next.js Dashboard** | ✅ Working | Glassmorphism admin panel at localhost:3000 |
+| LinkedIn | ⏸️ Token scope | MCP implemented, API token needs extra permissions |
+| Twitter | ⏸️ API credit | MCP implemented, needs $5 API tier upgrade |
 
 ---
 
-## ✨ What It Does
-
-Drop a markdown file in your Obsidian vault's Inbox folder. Within 30 seconds, your Dashboard automatically updates with:
-- Task filename (as clickable Obsidian wiki link)
-- Timestamp when detected
-- Current status (Inbox, Needs Action, Done)
-- Priority level
-
-**No manual updates. No external APIs. Just seamless task tracking.**
-
----
-
-## 🚀 Quick Start
-
-### Bronze (Offline, No API Required)
+## Command Examples
 
 ```bash
-# 1. Clone and install
+# CLI (from terminal)
+python scripts/natural_command.py "invoice Ali 5000 Rs web design"
+python scripts/natural_command.py "send email to john@gmail.com about meeting"
+python scripts/natural_command.py "add contact John Smith john@co.com +923001234567"
+python scripts/natural_command.py "register payment for INV/2026/00003"
+python scripts/natural_command.py "purchase bill Ali Traders 25000 supplies"
+
+# WhatsApp (from phone — send to bot)
+!invoice Ali 5000 Rs web design
+!email john@gmail.com about the proposal
+!contact John Smith john@co.com
+```
+
+---
+
+## Quick Start
+
+### 1. Clone and Install
+
+```bash
 git clone https://github.com/Psqasim/personal-ai-employee.git
 cd personal-ai-employee
+
+# Python dependencies
+python3 -m venv venv
+source venv/bin/activate
 pip install -e .[dev]
 
-# 2. Initialize your vault
-python3 scripts/init_vault.py ~/my-vault
-
-# 3. Start monitoring
-python3 scripts/watch_inbox.py ~/my-vault
-
-# 4. Drop a task and watch the magic happen ✨
-echo "# Review Proposal" > ~/my-vault/Inbox/task.md
+# Dashboard dependencies
+cd nextjs_dashboard
+npm install
+cd ..
 ```
 
-📖 **Bronze Setup Guide**: [docs/bronze/bronze-setup.md](docs/bronze/bronze-setup.md)
-
-### Natural Language Commands (Hackathon+)
+### 2. Configure Environment
 
 ```bash
-# Send any command in plain English — Claude parses intent and creates a vault draft
-venv/bin/python3 scripts/natural_command.py "invoice Ali 5000 Rs web design"
-# → vault/Pending_Approval/Odoo/INVOICE_DRAFT_MANUAL_Ali_*.md
-
-venv/bin/python3 scripts/natural_command.py "send email to john@gmail.com about meeting"
-# → vault/Pending_Approval/Email/EMAIL_DRAFT_CMD_*.md
-
-venv/bin/python3 scripts/natural_command.py "add contact John Smith john@co.com +9230012345"
-# → vault/Pending_Approval/Odoo/CONTACT_DRAFT_*.md
-
-venv/bin/python3 scripts/natural_command.py "register payment for invoice INV/2026/00003"
-# → vault/Pending_Approval/Odoo/PAYMENT_DRAFT_*.md
-
-venv/bin/python3 scripts/natural_command.py "create purchase bill from Ali Traders 25000 Rs supplies"
-# → vault/Pending_Approval/Odoo/BILL_DRAFT_*.md
-
-# WhatsApp: send "!invoice Ali 5000" from your phone → appears in dashboard
-# Requires: CLAUDE_API_KEY set in .env, WHATSAPP_ADMIN_NAME set to your contact name
-```
-
-### Silver (AI-Powered, Requires Claude API Key)
-
-```bash
-# 1. Get your Claude API key from https://console.anthropic.com/
-# 2. Configure .env
 cp .env.example .env
-# Set: ENABLE_AI_ANALYSIS=true, CLAUDE_API_KEY=sk-ant-api03-...
-
-# 3. Install Silver dependencies
-pip install anthropic>=0.18.0 google-api-python-client>=2.80.0 \
-  google-auth-oauthlib>=1.0.0
-
-# 4. Start watcher (AI analysis enabled automatically)
-python3 scripts/watch_inbox.py
-
-# 5. Drop a task — Dashboard now shows AI-assigned priority + category
-echo "# Urgent client proposal — due today" > vault/Inbox/task.md
+# Edit .env with your keys:
+#   CLAUDE_API_KEY=sk-ant-api03-...
+#   SMTP_USER=your@gmail.com
+#   SMTP_PASS=your-app-password
+#   ODOO_URL=https://your-instance.odoo.com
+#   ODOO_DB=your-db
+#   ODOO_USER=your-email
+#   ODOO_API_KEY=your-api-key
 ```
 
-⚡ **Silver Quickstart**: [docs/silver/quickstart.md](docs/silver/quickstart.md)
+### 3. Start Everything
+
+```bash
+# Start PM2 processes (approval handler + WhatsApp watcher)
+pm2 start ecosystem.config.local.js
+pm2 save
+
+# Start the dashboard
+cd nextjs_dashboard
+npm run dev
+# Open http://localhost:3000
+```
+
+### 4. First Login
+
+Default admin credentials are configured during setup. See [Manual Setup Guide](docs/MANUAL_SETUP_GUIDE.md) for full instructions.
 
 ---
 
-## 🏗️ How It Works
+## Project Structure
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    User Workflow                             │
-└────────────┬────────────────────────┬────────────────────────┘
-             │                        │
-             v                        v
-    ┌────────────────┐       ┌────────────────┐
-    │  Drop .md File │       │ Query via CLI  │
-    │  in Inbox/     │       │ (Claude Code)  │
-    └────────┬───────┘       └────────┬───────┘
-             │                        │
-             v                        v
-    ┌──────────────────────────────────────────┐
-    │        File Watcher (30s polling)        │
-    │  • Detects new files in Inbox/           │
-    │  • Updates Dashboard.md (atomic write)   │
-    │  • Logs events to vault/Logs/            │
-    └──────────────────┬───────────────────────┘
-                       │
-                       v
-    ┌──────────────────────────────────────────┐
-    │           Obsidian Vault                 │
-    │  Inbox/  Needs_Action/  Done/  Plans/    │
-    │  Dashboard.md  Company_Handbook.md       │
-    └──────────────────────────────────────────┘
-```
-
-**Architecture Deep Dive**: [docs/bronze/bronze-architecture.md](docs/bronze/bronze-architecture.md)
-
----
-
-## 📚 Documentation
-
-### Bronze Tier
-
-| Guide | Description | Link |
-|-------|-------------|------|
-| **Setup** | Installation, configuration, starting the watcher | [bronze-setup.md](docs/bronze/bronze-setup.md) |
-| **Architecture** | Component design, data flow, API reference | [bronze-architecture.md](docs/bronze/bronze-architecture.md) |
-| **Usage** | Daily workflow, Claude Code integration | [bronze-usage.md](docs/bronze/bronze-usage.md) |
-| **Testing** | Unit tests, integration tests, troubleshooting | [bronze-testing.md](docs/bronze/bronze-testing.md) |
-
-### Silver Tier
-
-| Guide | Description | Link |
-|-------|-------------|------|
-| **Quickstart** | 5-minute setup: API key + Gmail | [silver/quickstart.md](docs/silver/quickstart.md) |
-| **Setup Guide** | Full setup: WhatsApp, LinkedIn, PM2, MCP | [silver/setup-guide.md](docs/silver/setup-guide.md) |
-| **Testing** | Manual testing guide for Silver features | [silver/manual-testing-guide.md](docs/silver/manual-testing-guide.md) |
-
-### Gold Tier
-
-| Guide | Description | Link |
-|-------|-------------|------|
-| **Architecture** | Complete system architecture, data flows | [gold/architecture-diagram.md](docs/gold/architecture-diagram.md) |
-| **Lessons Learned** | Challenges, solutions, recommendations | [gold/lessons-learned.md](docs/gold/lessons-learned.md) |
-| **Demo Script** | 5-10 min hackathon walkthrough | [DEMO-SCRIPT.md](DEMO-SCRIPT.md) |
-| **Agent Skills** | 7 reusable skills (email, whatsapp, linkedin, etc.) | [.claude/skills/](.claude/skills/) |
-
-### Platinum Tier
-
-| Guide | Description | Link |
-|-------|-------------|------|
-| **Oracle Cloud Setup** | Deploy cloud agent to Oracle Free Tier VM | [oracle-cloud-setup.md](docs/platinum/oracle-cloud-setup.md) |
-| **PM2 Config** | Process management, auto-restart, log rotation | [ecosystem.config.js](ecosystem.config.js) |
-| **WhatsApp Notifications** | 5 alert types, cooldowns, admin number setup | [whatsapp_notifier.py](cloud_agent/src/notifications/whatsapp_notifier.py) |
-
-### Hackathon+ (Natural Language Commands + A2A)
-
-| Guide | Description | Link |
-|-------|-------------|------|
-| **Command Router** | Claude-powered intent parser, 8 action types | [command_router.py](cloud_agent/src/command_router.py) |
-| **CLI Interface** | Natural language commands from terminal | [natural_command.py](scripts/natural_command.py) |
-| **WhatsApp Commands** | `!invoice`, `!email`, `!contact` via WhatsApp | [whatsapp_watcher.py](scripts/whatsapp_watcher.py) |
-| **A2A Orchestration** | Agent-to-agent via vault files + git sync | [local orchestrator](local_agent/src/orchestrator.py) |
-
----
-
-## 🎯 Features
-
-### Bronze Tier (Foundation)
-- ✅ **Automatic File Detection** - Monitors Inbox/ every 30 seconds
-- ✅ **Dashboard Auto-Update** - Maintains task table with wiki links
-- ✅ **Event Logging** - All actions logged to vault/Logs/
-- ✅ **Atomic Writes** - No data corruption, timestamped backups
-- ✅ **Agent Skills API** - Query vault from Claude Code
-- ✅ **100% Offline** - No network requests, all local processing
-- ✅ **Obsidian Compatible** - Standard markdown, preserves formatting
-
-### Silver Tier (AI-Powered)
-- ✅ **AI Priority Analysis** - Claude assigns High/Medium/Low priority to every task
-- ✅ **Task Categorization** - Work / Personal / Urgent auto-classification
-- ✅ **24h Response Caching** - Minimizes API costs (typical: <$0.01/day)
-- ✅ **PII Sanitization** - Emails, phones, and account numbers stripped before API calls
-- ✅ **Gmail Watcher** - Monitors important emails, creates vault tasks automatically
-- ✅ **Graceful Fallback** - Reverts to Bronze behavior when API is unavailable
-
-### Gold Tier (Autonomous Execution) 🎯
-- ✅ **Email Automation** - AI drafts replies, human approves, SMTP sends via MCP
-- ✅ **WhatsApp Automation** - Playwright automation, keyword detection, approval workflow
-- ✅ **LinkedIn Automation** - Business-aligned posts, rate limiting, scheduling
-- ✅ **Multi-Step Plans** - Ralph Wiggum loop (max 10 iterations) executes complex tasks
-- ✅ **MCP Integration** - 4 MCP servers (email, whatsapp, linkedin, odoo) with approval gates
-- ✅ **CEO Briefing** - Weekly analytics with AI insights, cost tracking, proactive suggestions
-- ✅ **Odoo Integration** - Draft invoice/expense creation (NEVER auto-confirms)
-- ✅ **Comprehensive Logging** - All MCP actions logged BEFORE execution
-- ✅ **7 Agent Skills** - Reusable skills package for email, whatsapp, linkedin, social-media, odoo, ceo-briefing, ralph-wiggum-loop
-
-### Platinum Tier (Proactive Intelligence) 🚀
-- ✅ **WhatsApp Admin Notifications** - 5 notification types sent automatically to admin
-  - 🚨 Urgent email alert (fires immediately when high-priority email detected)
-  - ⏳ Pending approvals alert (fires when 5+ items waiting in Pending_Approval/)
-  - ❌ Critical error alert (fires on email send failure or system crash)
-  - ☀️ Morning summary at 8 AM UTC daily (emails pending, processed yesterday, API cost)
-  - ✅ Task completed confirmation (after each successful email/WhatsApp send)
-- ✅ **Non-Blocking Architecture** - All WhatsApp sends run in daemon threads (65s timeout); never blocks main loops
-- ✅ **Stale File Recovery (FR-P016)** - Hourly scan of vault/In_Progress/ — files older than 24h auto-moved back to Needs_Action/ with audit log
-- ✅ **Environment Flag Control** - `ENABLE_WHATSAPP_NOTIFICATIONS=true/false` for silent skip
-- ✅ **Configurable Admin Number** - `WHATSAPP_NOTIFICATION_NUMBER` in `.env`
-
-### Hackathon+ (Natural Language Commands + A2A) 🤖
-- ✅ **Natural Language Command Router** (`cloud_agent/src/command_router.py`) — Claude-powered intent extractor supporting 8 action types; few-shot prompted with 11 examples; routes to correct vault draft automatically
-- ✅ **CLI Interface** (`scripts/natural_command.py`) — Terminal-based command entry: `python scripts/natural_command.py "invoice Ali 5000 Rs web design"` → creates vault draft instantly
-- ✅ **WhatsApp Command Interface** — Admin messages starting with `!` or `/` (or from `WHATSAPP_ADMIN_NAME`) are parsed as commands; bot replies with draft confirmation instead of auto-reply
-- ✅ **A2A Orchestration (Agent-to-Agent)** — `monitor_needs_action()` fully implemented: cloud agent writes to `vault/Needs_Action/`, local agent atomically claims tasks, routes by `action` frontmatter field, executes, and releases to `Done/` or `Failed/`
-- ✅ **Odoo: Create Contact** — `OdooPoster.create_contact(name, email, phone)` → `res.partner.create()` with WhatsApp confirmation
-- ✅ **Odoo: Register Payment** — `OdooPoster.register_payment(invoice_number)` → `account.payment.create()` + `action_post()` + reconcile attempt against invoice
-- ✅ **Odoo: Purchase Bills** — `OdooPoster.create_purchase_bill(vendor, amount)` → `account.move` with `move_type=in_invoice` (draft only, never auto-posts)
-- ✅ **New Vault Dataclasses** — `OdooContact`, `OdooPayment`, `OdooBill` in `agent_skills/vault_parser.py` with full frontmatter parsing
-
-#### Command Examples (WhatsApp or CLI)
-```
-"invoice Ali 5000 Rs web design"          → Odoo draft invoice
-"!email john@co.com about the proposal"   → Email draft
-"add contact John Smith john@co.com"      → Odoo contact draft
-"register payment for INV/2026/00003"     → Payment draft
-"purchase bill Ali Traders 25000 supplies"→ Vendor bill draft
-"post linkedin: We shipped AI invoicing!" → LinkedIn draft
-```
-
-#### How A2A Works
-```
-Oracle Cloud VM (cloud_agent)          Local PC / WSL2 (local_agent)
-─────────────────────────────          ─────────────────────────────
-WhatsApp command received              git pull every 30s
-  ↓ command_router.py                    ↓
-vault/Pending_Approval/ ──approve──→  vault/Approved/ ──auto──→ executor
-
-OR (direct A2A path):
-vault/Needs_Action/TASK.md  ─────────→ claim_task() → In_Progress/local/
-                                         ↓ detect action field
-                                         ↓ route to OdooPoster / email_sender
-                                       vault/Done/  ←── result
+personal-ai-employee/
+├── nextjs_dashboard/          # Next.js 16 admin dashboard
+│   ├── app/                   # App Router pages
+│   │   ├── dashboard/         # Main dashboard, status, briefings, settings
+│   │   ├── login/             # Glassmorphism login page
+│   │   └── api/               # 15+ API routes (approve, vault, health, users...)
+│   ├── components/            # 15+ React components (ApprovalCard, VaultBrowser...)
+│   └── lib/                   # Vault parser, user management, API usage tracking
+│
+├── cloud_agent/               # Oracle Cloud VM agent
+│   └── src/
+│       ├── orchestrator.py    # Gmail watcher, CEO briefing, command processing
+│       ├── command_router.py  # Claude-powered NL intent parser (8 action types)
+│       └── git_sync.py        # Auto git pull/push every 60s
+│
+├── local_agent/               # Local machine agent
+│   └── src/
+│       ├── orchestrator.py    # Scan Approved/, execute sends, move to Done/
+│       └── approval_handler.py # SMTP email sender, Odoo API caller
+│
+├── mcp_servers/               # 7 MCP servers (JSON-RPC)
+│   ├── email_mcp/             # SMTP email sending
+│   ├── whatsapp_mcp/          # Playwright WhatsApp Web automation
+│   ├── linkedin_mcp/          # LinkedIn API v2 posting
+│   ├── odoo_mcp/              # Odoo XML-RPC (invoices, contacts, payments)
+│   ├── twitter_mcp/           # Twitter/X API
+│   ├── facebook_mcp/          # Facebook Graph API
+│   └── instagram_mcp/         # Instagram Graph API
+│
+├── agent_skills/              # Reusable skill modules
+│   ├── vault_parser.py        # Parse vault files, dataclasses for all types
+│   ├── ai_analyzer.py         # Claude AI analysis with caching
+│   ├── dashboard_updater.py   # Obsidian Dashboard.md auto-update
+│   ├── claim_manager.py       # A2A claim-by-move task ownership
+│   └── ...                    # 12+ more skills
+│
+├── scripts/                   # Utility scripts
+│   ├── whatsapp_watcher.py    # WhatsApp monitoring + AI reply
+│   ├── wa_reauth.py           # WhatsApp pairing code re-auth
+│   ├── natural_command.py     # CLI natural language commands
+│   ├── ceo_briefing.py        # Weekly CEO briefing generator
+│   └── ...                    # 10+ more scripts
+│
+├── vault/                     # Obsidian vault (shared state)
+│   ├── Inbox/                 # New items land here
+│   ├── Needs_Action/          # Items needing processing
+│   ├── Pending_Approval/      # Drafts awaiting human approval
+│   ├── Approved/              # Approved items ready for execution
+│   ├── Done/                  # Completed items (Email/, WhatsApp/, Odoo/)
+│   ├── Failed/                # Failed items with retry capability
+│   ├── Briefings/             # Weekly CEO briefings
+│   ├── Logs/                  # Audit logs, MCP action logs
+│   └── Dashboard.md           # Auto-updated task dashboard
+│
+├── ecosystem.config.js        # PM2 config for Oracle Cloud (3 processes)
+├── ecosystem.config.local.js  # PM2 config for local machine (2 processes)
+├── docs/                      # Comprehensive documentation
+├── specs/                     # Feature specifications (SDD)
+└── tests/                     # Unit, integration, and live tests
 ```
 
 ---
 
-## 🗺️ Roadmap
+## Screenshots
 
-| Tier | Status | Capabilities |
-|------|--------|-------------|
-| **Bronze** | ✅ **Complete** | Vault monitoring, dashboard updates, agent skills API |
-| **Silver** | ✅ **Complete** | AI priority analysis, task categorization, Gmail integration |
-| **Gold** | ✅ **Complete** | Multi-step execution, MCP automation, human approval workflow |
-| **Platinum** | ✅ **Complete** | WhatsApp admin notifications, stale recovery, proactive intelligence |
-| **Hackathon+** | ✅ **Complete** | Natural language commands, A2A orchestration, Odoo contacts/payments/bills |
-
-**Current Release**: Hackathon+ (Natural Language Commands + A2A)
-
----
-
-## 🔧 Requirements
-
-### Bronze (All Tiers)
-- **Python**: 3.11 or higher
-- **Obsidian**: 1.5+ (tested with 1.11.7)
-- **OS**: WSL Ubuntu 22.04+ (primary), macOS 13+, Windows 11 (secondary)
-- **Disk Space**: 1GB for vault with 1000 markdown files
-- **RAM**: 8GB minimum (watcher uses <100MB)
-
-### Silver (Additional)
-- **Claude API Key** — from [console.anthropic.com](https://console.anthropic.com/) (free tier available)
-- **anthropic** Python SDK ≥ 0.18.0
-- **Google Cloud Project** — for Gmail watcher (optional)
-- **Node.js 18+** — for PM2 process manager (optional)
-
-### Gold (Additional)
-- **Playwright** — `playwright install chromium` for WhatsApp automation
-- **SMTP Credentials** — Gmail app password or custom SMTP server
-- **LinkedIn OAuth Token** — for LinkedIn API v2 (optional)
-- **MCP Servers** — JSON-RPC servers for email, whatsapp, linkedin, odoo
-- **Odoo Instance** — Community or Enterprise (optional, for accounting integration)
-
-### Platinum (Additional)
-- **WhatsApp Session** — authenticated session at `WHATSAPP_SESSION_PATH` (run `scripts/setup_whatsapp_session.py` once)
-- **Env vars** — `ENABLE_WHATSAPP_NOTIFICATIONS=true`, `WHATSAPP_NOTIFICATION_NUMBER=+<country><number>`
+| Screenshot | Description |
+|-----------|-------------|
+| ![Dashboard](public/screenshots/dashboard-main.png) | Main dashboard with stats, approvals, and glassmorphism UI |
+| ![Quick Create](public/screenshots/quick-create.png) | Quick Create modal for Email/WhatsApp/Invoice/LinkedIn |
+| ![Vault Browser](public/screenshots/vault-browser.png) | Browse vault folders and file contents |
+| ![MCP Status](public/screenshots/mcp-status.png) | Real-time MCP server health grid |
+| ![Dark Mode](public/screenshots/dark-mode.png) | Full dark mode with particle background |
+| ![CEO Briefing](public/screenshots/ceo-briefing.png) | Weekly AI-generated business briefing |
+| ![PM2 Oracle](public/screenshots/pm2-oracle.png) | PM2 processes running on Oracle Cloud VM |
+| ![WhatsApp](public/screenshots/whatsapp-chat.png) | WhatsApp auto-reply in action |
+| ![Odoo Invoice](public/screenshots/odoo-invoice.png) | Draft invoice created in Odoo |
+| ![Mobile](public/screenshots/mobile-view.png) | Responsive mobile dashboard view |
 
 ---
 
-## 🧪 Testing
+## Documentation
 
-Bronze Tier is production-ready with comprehensive testing:
-
-- ✅ **Manual End-to-End Test**: PASSED (5/5 steps)
-- ✅ **File Detection**: <20 seconds (target: <30s)
-- ✅ **Dashboard Update**: <1 second (target: <2s)
-- ✅ **Event Logging**: All events captured correctly
-
-**Test Results**: [docs/bronze/bronze-testing.md](docs/bronze/bronze-testing.md)
-
----
-
-## 🤝 Contributing
-
-Contributions welcome! This project follows Spec-Driven Development:
-
-1. Review `.specify/memory/constitution.md` for development principles
-2. Check `specs/bronze-tier/spec.md` for current scope
-3. Run tests: `pytest --cov=agent_skills`
-4. Format code: `black agent_skills/ scripts/`
-5. Type check: `mypy agent_skills/ scripts/`
+| Guide | Description |
+|-------|-------------|
+| [Manual Setup Guide](docs/MANUAL_SETUP_GUIDE.md) | Complete setup: local + cloud + WhatsApp + PM2 |
+| [Bronze Architecture](docs/bronze/bronze-architecture.md) | Core vault monitoring design |
+| [Gold Architecture](docs/gold/architecture-diagram.md) | Full system architecture with MCP |
+| [Oracle Cloud Setup](docs/platinum/oracle-cloud-setup.md) | Deploy to Oracle Free Tier VM |
+| [Odoo Integration](docs/odoo-integration.md) | Odoo XML-RPC setup and usage |
+| [Hackathon Final Report](docs/reports/HACKATHON-FINAL-SUBMISSION.md) | Full validation with test results |
 
 ---
 
-## 📄 License
+## Safety & Security
 
-MIT License - see [LICENSE](LICENSE) file for details.
+This system is designed with **human-in-the-loop** at every critical step:
+
+- **No auto-send** — All emails, WhatsApp messages, and LinkedIn posts require human approval
+- **No auto-confirm** — Odoo invoices are created as DRAFT only (never auto-posted)
+- **No auto-pay** — Payment registration requires explicit approval
+- **Audit logging** — Every MCP action is logged BEFORE execution
+- **PII sanitization** — Personal data stripped before sending to AI
+- **Secrets isolation** — `.env` never syncs via git; cloud and local have separate secrets
+- **RBAC** — Admin (full access) and Viewer (read-only) roles in dashboard
+- **Bounded loops** — Ralph Wiggum loop capped at 10 iterations max
 
 ---
 
-## 👤 Author
+## Requirements
+
+| Component | Version |
+|-----------|---------|
+| Python | 3.11+ |
+| Node.js | 18+ |
+| npm | 9+ |
+| Obsidian | 1.5+ (optional, for vault viewing) |
+| PM2 | 5+ |
+| Playwright | Latest (for WhatsApp) |
+| OS | WSL2 Ubuntu 22.04+ / macOS 13+ / Linux |
+
+---
+
+## Testing
+
+```bash
+# Run unit tests
+pytest --cov=agent_skills
+
+# Run integration tests
+pytest tests/integration/
+
+# Run MCP server tests
+pytest tests/live/test_mcp_servers.py
+```
+
+- 47/48 automated tests passing (97% coverage)
+- All 5 core MCP servers operational
+- 6/9 integrations fully working end-to-end
+- Safety gates enforced (approval workflow, bounded loops, audit logging)
+- Oracle Cloud VM stable — 3 PM2 processes, git auto-sync every 60s
+
+---
+
+## Author
 
 **Muhammad Qasim**
 - Full Stack Developer | AI & Web 3.0 Enthusiast
@@ -393,14 +439,10 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ---
 
-## 🙏 Acknowledgments
+## License
 
-Built for the GIAIC Personal AI Employee Hackathon 2026.
-
-Special thanks to the Obsidian community for inspiration and the Claude AI team for making intelligent automation accessible.
+MIT License - see [LICENSE](LICENSE) file for details.
 
 ---
 
-**Ready to get started?** → [Setup Guide](docs/bronze/bronze-setup.md)
-
-**Have questions?** → [Open an issue](https://github.com/Psqasim/personal-ai-employee/issues)
+**Built with Claude Code for the GIAIC Personal AI Employee Hackathon 2026.**
