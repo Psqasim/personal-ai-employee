@@ -747,12 +747,14 @@ def _find_msg_input(page, timeout: int = 15000):
         pass
 
     # Strategy 4: JS fallback — query DOM directly
+    # IMPORTANT: Exclude data-tab="3" which is the search input, not compose box
     try:
         el = page.evaluate_handle("""() => {
-            // Try common selectors
             const sels = [
                 'footer div[contenteditable="true"]',
-                'div[contenteditable="true"][data-tab]',
+                'div[contenteditable="true"][data-tab="10"]',
+                'div[contenteditable="true"][data-tab="1"]',
+                '[data-testid="conversation-compose-box-input"]',
                 'div[title="Type a message"]',
             ];
             for (const s of sels) {
@@ -956,8 +958,22 @@ def _type_in_search(page, query: str) -> bool:
     return False
 
 
+def _has_compose_box(page) -> bool:
+    """Check if the WhatsApp message compose box is visible on the page."""
+    for sel in [
+        '[data-testid="conversation-compose-box-input"]',
+        'div[contenteditable="true"][data-tab="10"]',
+        'footer div[contenteditable="true"]',
+        'div[aria-label="Type a message"] div[contenteditable="true"]',
+    ]:
+        if page.locator(sel).count() > 0:
+            return True
+    return False
+
+
 def _click_first_result(page, query: str) -> bool:
-    """Click the first chat result in WhatsApp search results."""
+    """Click the first chat result in WhatsApp search results.
+    Verifies that the compose box actually appeared after clicking."""
     for sel in [
         '[data-testid="cell-frame-container"]',
         'div[aria-label^="Chat with"]',
@@ -968,9 +984,12 @@ def _click_first_result(page, query: str) -> bool:
         if results.count() > 0:
             try:
                 results.first.click(timeout=5000)
-                page.wait_for_timeout(2000)
-                logger.info(f"🔍 Search found chat: {query}")
-                return True
+                page.wait_for_timeout(3000)
+                # Verify compose box appeared (not just search result opened)
+                if _has_compose_box(page):
+                    logger.info(f"🔍 Search found chat: {query}")
+                    return True
+                logger.debug(f"Search clicked result for {query} but no compose box appeared")
             except Exception:
                 continue
 
@@ -979,9 +998,10 @@ def _click_first_result(page, query: str) -> bool:
         items = page.get_by_role("listitem")
         if items.count() > 0:
             items.first.click(timeout=5000)
-            page.wait_for_timeout(2000)
-            logger.info(f"🔍 Search found chat (role): {query}")
-            return True
+            page.wait_for_timeout(3000)
+            if _has_compose_box(page):
+                logger.info(f"🔍 Search found chat (role): {query}")
+                return True
     except Exception:
         pass
 
