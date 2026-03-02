@@ -566,6 +566,127 @@ def _parse_vault_frontmatter(file_path: Path) -> dict:
         return {}
 
 
+def _type_and_send_message(page, text: str) -> bool:
+    """
+    Type a message into WhatsApp's compose box AND send it.
+    Uses multiple methods to ensure React actually registers the text.
+    Returns True if the message was likely sent (input cleared after Enter).
+    """
+    msg_box = _find_msg_input(page, timeout=15000)
+    if not msg_box:
+        raise Exception("Message input not found")
+
+    msg_box.click()
+    page.wait_for_timeout(300)
+
+    typed = False
+
+    # Method 1: execCommand('insertText') — best for contenteditable + React
+    # This triggers beforeinput/input events that React's synthetic event system listens to
+    if not typed:
+        try:
+            result = page.evaluate("""(text) => {
+                const sels = [
+                    'div[contenteditable="true"][data-tab="10"]',
+                    'div[contenteditable="true"][data-tab="1"]',
+                    'footer div[contenteditable="true"]',
+                    '[data-testid="conversation-compose-box-input"]',
+                ];
+                let el = null;
+                for (const s of sels) {
+                    el = document.querySelector(s);
+                    if (el) break;
+                }
+                if (!el) el = document.activeElement;
+                if (!el || !el.isContentEditable) return false;
+                el.focus();
+                // execCommand triggers proper input events for React
+                document.execCommand('insertText', false, text);
+                return el.textContent.trim().length > 0;
+            }""", text)
+            if result:
+                typed = True
+                logger.debug("Message typed via execCommand")
+        except Exception as e:
+            logger.debug(f"execCommand failed: {e}")
+
+    # Method 2: keyboard.type() — character by character (proven in search)
+    # Strips newlines to avoid premature Enter-sends
+    if not typed:
+        try:
+            msg_box.click()
+            page.wait_for_timeout(200)
+            clean = text.replace('\n', ' ').replace('\r', '')
+            page.keyboard.type(clean, delay=10)
+            typed = True
+            logger.debug("Message typed via keyboard.type()")
+        except Exception as e:
+            logger.debug(f"keyboard.type() failed: {e}")
+
+    # Method 3: insert_text() — last resort
+    if not typed:
+        try:
+            msg_box.click()
+            page.wait_for_timeout(200)
+            page.keyboard.insert_text(text)
+            typed = True
+            logger.debug("Message typed via insert_text()")
+        except Exception as e:
+            logger.debug(f"insert_text() failed: {e}")
+
+    if not typed:
+        raise Exception("All typing methods failed")
+
+    # Verify text appeared in the input before pressing Enter
+    page.wait_for_timeout(300)
+    try:
+        input_text = page.evaluate("""() => {
+            const sels = [
+                'div[contenteditable="true"][data-tab="10"]',
+                'div[contenteditable="true"][data-tab="1"]',
+                'footer div[contenteditable="true"]',
+                '[data-testid="conversation-compose-box-input"]',
+            ];
+            for (const s of sels) {
+                const el = document.querySelector(s);
+                if (el && el.textContent.trim()) return el.textContent.trim();
+            }
+            return '';
+        }""")
+        if not input_text:
+            logger.warning("⚠️ Message input is EMPTY after typing — text not registered by WhatsApp")
+            return False
+        logger.debug(f"Input verified: {input_text[:40]}...")
+    except Exception:
+        pass  # verification failed but proceed anyway
+
+    # Press Enter to send
+    page.keyboard.press("Enter")
+    page.wait_for_timeout(2000)
+
+    # Verify input cleared (= WhatsApp consumed the message)
+    try:
+        remaining = page.evaluate("""() => {
+            const sels = [
+                'div[contenteditable="true"][data-tab="10"]',
+                'div[contenteditable="true"][data-tab="1"]',
+                'footer div[contenteditable="true"]',
+            ];
+            for (const s of sels) {
+                const el = document.querySelector(s);
+                if (el) return el.textContent.trim();
+            }
+            return '';
+        }""")
+        if remaining:
+            logger.warning(f"⚠️ Input NOT empty after Enter — message may not have sent: {remaining[:40]}")
+            return False
+    except Exception:
+        pass
+
+    return True
+
+
 def _find_msg_input(page, timeout: int = 15000):
     """Find the WhatsApp message input box using multiple strategies.
     Returns the element handle or None."""
@@ -893,18 +1014,9 @@ def _send_vault_whatsapp_drafts(page) -> None:
 
             _dismiss_dialogs(page)
 
-            # Wait for message input (multi-strategy)
-            msg_box = _find_msg_input(page, timeout=20000)
-            if not msg_box:
-                raise Exception("Message input not found after opening chat")
-            msg_box.click()
-            page.wait_for_timeout(300)
-            # insert_text() triggers React's input events (unlike fill())
-            # and doesn't treat \n as Enter/send (unlike type()).
-            page.keyboard.insert_text(body)
-            page.wait_for_timeout(500)
-            page.keyboard.press("Enter")
-            page.wait_for_timeout(2000)
+            sent = _type_and_send_message(page, body)
+            if not sent:
+                raise Exception(f"Message typing/send failed for +{phone}")
 
             logger.info(f"✅ Vault WA sent to +{phone}: {body[:60]}")
             shutil.move(str(draft_file), str(wa_done / draft_file.name))
@@ -1010,6 +1122,13 @@ def run_cycle(warm_up: bool = False):
                             page.wait_for_timeout(2000)
                             sender = _read_sender(page, i)
 
+                            # Skip official WhatsApp channels and non-phone contacts
+                            # that can't be searched by number (would cause empty search)
+                            SKIP_SENDERS = {"whatsapp", "meta ai", "status"}
+                            if sender.lower().strip() in SKIP_SENDERS:
+                                logger.debug(f"Chat {i}: skipping official channel '{sender}'")
+                                continue
+
                             if not warm_up and not has_unread:
                                 sender_digits = re.sub(r"[^\d]", "", sender)[-10:]
                                 try:
@@ -1072,7 +1191,15 @@ def run_cycle(warm_up: bool = False):
                     for sender, last_msg, reply in pending:
                         sent = False
                         try:
+                            # Safety: skip senders with no digits (can't be searched)
                             search_q = sender
+                            digits = re.sub(r"[^\d]", "", search_q)
+                            if not digits:
+                                logger.warning(f"⚠️ Sender '{sender}' has no phone digits — skipping send")
+                                cache_key = f"{sender}:{last_msg[:50]}"
+                                _replied_cache.add(cache_key)
+                                continue
+
                             if not _open_chat_by_search(page, search_q):
                                 logger.warning(f"⚠️ Could not find chat for {sender} — skipping send")
                                 cache_key = f"{sender}:{last_msg[:50]}"
@@ -1080,18 +1207,11 @@ def run_cycle(warm_up: bool = False):
                                 log_action(sender, last_msg, reply, is_urgent(last_msg), False)
                                 continue
 
-                            msg_box = _find_msg_input(page, timeout=15000)
-                            if not msg_box:
-                                raise Exception("Message input not found after opening chat")
-                            msg_box.click()
-                            # insert_text() triggers React's input events (unlike fill())
-                            # and doesn't treat \n as Enter/send (unlike type()).
-                            page.keyboard.insert_text(reply)
-                            page.wait_for_timeout(500)
-                            page.keyboard.press("Enter")
-                            page.wait_for_timeout(2000)
-                            sent = True
-                            logger.info(f"✅ Sent to {sender}")
+                            sent = _type_and_send_message(page, reply)
+                            if sent:
+                                logger.info(f"✅ Sent to {sender}")
+                            else:
+                                logger.warning(f"⚠️ Message may not have sent to {sender}")
                         except Exception as e:
                             logger.warning(f"⚠️ Send failed to {sender}: {e}")
 
