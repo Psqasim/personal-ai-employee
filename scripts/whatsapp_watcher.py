@@ -22,6 +22,7 @@ import re
 import time
 import fcntl
 import json
+import signal
 import shutil
 import logging
 import urllib.parse
@@ -932,6 +933,15 @@ def _has_pending_wa_drafts() -> bool:
     return wa_approved.exists() and any(wa_approved.glob("*.md"))
 
 
+# ── Cycle timeout guard ──────────────────────────────────────────────────────
+CYCLE_TIMEOUT = 600  # 10 minutes max per cycle — prevents infinite hangs
+
+class CycleTimeoutError(Exception):
+    pass
+
+def _cycle_alarm_handler(signum, frame):
+    raise CycleTimeoutError(f"Cycle exceeded {CYCLE_TIMEOUT}s timeout")
+
 # ── Core cycle ───────────────────────────────────────────────────────────────
 def run_cycle(warm_up: bool = False):
     """
@@ -950,6 +960,11 @@ def run_cycle(warm_up: bool = False):
     if not os.path.isdir(SESSION_PATH):
         logger.error(f"Session missing: {SESSION_PATH} — run setup_whatsapp_session.py")
         return
+
+    # Set alarm-based cycle timeout to prevent infinite hangs
+    # (Chrome can become unresponsive on low-memory VMs)
+    old_handler = signal.signal(signal.SIGALRM, _cycle_alarm_handler)
+    signal.alarm(CYCLE_TIMEOUT)
 
     inbox: list[tuple[str, str]] = []   # (sender, last_msg)
     _seen_this_cycle: set = set()       # deduplicate within one cycle
@@ -1097,9 +1112,20 @@ def run_cycle(warm_up: bool = False):
                         ctx.close()
                     except Exception:
                         pass  # browser may already be dead (OOM, crash)
+    except CycleTimeoutError:
+        logger.error(f"⏰ Cycle timed out after {CYCLE_TIMEOUT}s — killing stale Chrome")
+        # Kill any leftover Chrome processes from this cycle
+        try:
+            os.system("pkill -f 'chrome-headless-shell.*whatsapp_session' 2>/dev/null")
+        except Exception:
+            pass
+        return
     except TimeoutError as e:
         logger.warning(f"Browser lock timeout: {e}")
         return
+    finally:
+        signal.alarm(0)  # cancel the timeout alarm
+        signal.signal(signal.SIGALRM, old_handler)
 
     _save_cache()
 
