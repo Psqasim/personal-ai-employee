@@ -1025,6 +1025,24 @@ def _send_vault_whatsapp_drafts(page) -> None:
     wa_done.mkdir(parents=True, exist_ok=True)
     wa_failed.mkdir(parents=True, exist_ok=True)
 
+    # Skip stale NOTIFY files (older than 1 hour) — they pile up when watcher is down
+    now_ts = time.time()
+    fresh_files = []
+    for df in draft_files:
+        age_hours = (now_ts - df.stat().st_mtime) / 3600
+        if df.name.startswith("NOTIFY_") and age_hours > 1:
+            logger.info(f"🗑️ Skipping stale NOTIFY ({int(age_hours)}h old): {df.name}")
+            shutil.move(str(df), str(wa_done / df.name))
+            continue
+        fresh_files.append(df)
+    draft_files = fresh_files
+
+    # Limit to 3 sends per cycle to prevent spam floods
+    MAX_VAULT_SENDS = 3
+    if len(draft_files) > MAX_VAULT_SENDS:
+        logger.info(f"📬 {len(draft_files)} vault drafts queued — sending first {MAX_VAULT_SENDS} this cycle")
+        draft_files = draft_files[:MAX_VAULT_SENDS]
+
     for draft_file in draft_files:
         fm = _parse_vault_frontmatter(draft_file)
         # Accept both cloud-agent format (action: send_message) and
