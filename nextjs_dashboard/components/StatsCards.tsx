@@ -54,7 +54,7 @@ export function StatsCards({ pending, inProgress, approved }: StatsCardsProps) {
       iconBg: "bg-gradient-to-br from-cyan-400/20 to-blue-500/20",
     },
     {
-      label: "Approved Today",
+      label: "Completed",
       value: approved,
       icon: "✅",
       gradient: "from-emerald-400 to-green-500",

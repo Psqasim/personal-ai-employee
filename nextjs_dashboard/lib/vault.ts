@@ -164,7 +164,7 @@ export function getVaultStatus() {
   try {
     const getPendingPath = path.join(VAULT_PATH, "Pending_Approval");
     const inProgressPath = path.join(VAULT_PATH, "In_Progress");
-    const approvedPath = path.join(VAULT_PATH, "Approved");
+    const donePath = path.join(VAULT_PATH, "Done");
 
     const countFilesInDir = (dir: string): number => {
       if (!fs.existsSync(dir)) return 0;
@@ -189,7 +189,7 @@ export function getVaultStatus() {
     return {
       pending: countFilesInDir(getPendingPath),
       inProgress: countFilesInDir(inProgressPath),
-      approved: countFilesInDir(approvedPath),
+      approved: countFilesInDir(donePath),
     };
   } catch (error) {
     console.error("Error getting vault status:", error);

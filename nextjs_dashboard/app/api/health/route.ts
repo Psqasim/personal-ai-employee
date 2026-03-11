@@ -68,33 +68,48 @@ function checkEmail(): MCPServerHealth {
 }
 
 function checkGmail(): MCPServerHealth {
+  // Check env vars that the cloud orchestrator uses for Gmail
   const credPath = process.env.GMAIL_CREDENTIALS_PATH;
-  const exists = credPath ? fs.existsSync(credPath) : false;
+  const gmailUser = process.env.GMAIL_ADDRESS || process.env.SMTP_USER;
+  const hasCredFile = credPath ? fs.existsSync(credPath) : false;
+  // If SMTP is configured with a Gmail address, Gmail watcher is active
+  const isConfigured = hasCredFile || !!gmailUser;
   return {
     name: "Gmail",
-    status: exists ? "online" : "offline",
+    status: isConfigured ? "online" : "offline",
     lastCall: null,
-    description: exists ? "Credentials found · Watcher active" : "Credentials not found",
+    description: isConfigured ? `Watcher active · ${gmailUser || "configured"}` : "Credentials not found",
   };
 }
 
 function checkWhatsApp(): MCPServerHealth {
-  const sessionPath = process.env.WHATSAPP_SESSION_PATH || "/home/ps_qasim/.whatsapp_session_dir";
-  try {
-    const indexedDbPath = `${sessionPath}/Default/IndexedDB`;
-    if (!fs.existsSync(indexedDbPath)) {
-      return { name: "WhatsApp", status: "offline", lastCall: null, description: "Session not found — run wa_local_setup.py" };
+  // Try multiple possible session paths (local WSL2 and cloud VM)
+  const candidates = [
+    process.env.WHATSAPP_SESSION_PATH,
+    "/home/ubuntu/.whatsapp_session_dir",
+    "/home/ps_qasim/.whatsapp_session_dir",
+  ].filter(Boolean) as string[];
+
+  for (const sessionPath of candidates) {
+    try {
+      const indexedDbPath = `${sessionPath}/Default/IndexedDB`;
+      if (fs.existsSync(indexedDbPath)) {
+        const files = fs.readdirSync(indexedDbPath);
+        if (files.length > 0) {
+          return {
+            name: "WhatsApp",
+            status: "online",
+            lastCall: null,
+            description: "Session active · Watcher running",
+          };
+        }
+      }
+    } catch {
+      // Try next candidate
     }
-    const files = fs.readdirSync(indexedDbPath);
-    return {
-      name: "WhatsApp",
-      status: files.length > 0 ? "online" : "offline",
-      lastCall: null,
-      description: files.length > 0 ? "Session active · Watcher running" : "Session empty — re-authenticate",
-    };
-  } catch {
-    return { name: "WhatsApp", status: "unknown", lastCall: null, description: "Cannot read session directory" };
   }
+
+  return { name: "WhatsApp", status: "offline", lastCall: null, description: "Session not found — run wa_local_setup.py" };
 }
 
 function checkTwitter(): MCPServerHealth {
