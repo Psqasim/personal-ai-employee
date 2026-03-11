@@ -56,7 +56,7 @@ jobs:
       - name: Restart PM2
         run: |
           ssh -i ~/.ssh/deploy_key ubuntu@129.151.151.212 \
-            "pm2 restart nextjs_dashboard && pm2 save"
+            "pm2 restart nextjs_dashboard 2>/dev/null || (pm2 delete nextjs_dashboard 2>/dev/null; cd /opt/personal-ai-employee && pm2 start npm --name nextjs_dashboard -- start --prefix nextjs_dashboard); pm2 save"
 
       - name: Verify deployment
         run: |
