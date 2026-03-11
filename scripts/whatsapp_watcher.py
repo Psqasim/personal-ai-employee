@@ -25,6 +25,7 @@ import json
 import signal
 import shutil
 import logging
+import threading
 import urllib.parse
 from contextlib import contextmanager
 from pathlib import Path
@@ -1299,6 +1300,32 @@ def run_cycle(warm_up: bool = False):
         _replied_cache.clear()
 
 
+# ── Watchdog thread ──────────────────────────────────────────────────────────
+# signal.alarm can't interrupt C-level Playwright calls. This watchdog thread
+# monitors the main loop and force-kills the process if it's stuck.
+# PM2 auto-restarts the process, giving us a clean slate.
+
+_watchdog_last_heartbeat = time.monotonic()
+_WATCHDOG_TIMEOUT = 600  # 10 minutes — same as CYCLE_TIMEOUT
+
+def _watchdog_heartbeat():
+    """Call this from the main loop to signal the watchdog we're alive."""
+    global _watchdog_last_heartbeat
+    _watchdog_last_heartbeat = time.monotonic()
+
+def _watchdog_thread():
+    """Background thread that force-exits if main loop is stuck."""
+    while True:
+        time.sleep(60)  # check every 60 seconds
+        elapsed = time.monotonic() - _watchdog_last_heartbeat
+        if elapsed > _WATCHDOG_TIMEOUT:
+            logger.error(f"🐕 WATCHDOG: No heartbeat for {int(elapsed)}s — force-killing process")
+            # Kill Chrome first
+            os.system("pkill -9 -f 'chrome-headless-shell.*whatsapp_session' 2>/dev/null")
+            time.sleep(1)
+            os._exit(1)  # PM2 will restart us
+
+
 # ── Main loop ────────────────────────────────────────────────────────────────
 def run():
     global _warmed_up
@@ -1310,10 +1337,15 @@ def run():
         logger.warning("ENABLE_WHATSAPP_WATCHER=false — set to true in .env")
         return
 
+    # Start watchdog thread — kills process if stuck in C-level Playwright call
+    wd = threading.Thread(target=_watchdog_thread, daemon=True)
+    wd.start()
+
     # Load persisted cache — keeps old entries so we never re-reply after restart
     _load_cache()
 
     while True:
+        _watchdog_heartbeat()  # tell watchdog we're alive
         try:
             if not _warmed_up:
                 # First cycle: read all current messages into cache WITHOUT replying.
@@ -1325,6 +1357,7 @@ def run():
                 run_cycle()
         except Exception as e:
             logger.error(f"Unexpected error: {e}")
+        _watchdog_heartbeat()  # heartbeat after cycle completes too
         time.sleep(POLL_INTERVAL)
 
 
