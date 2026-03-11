@@ -39,7 +39,7 @@ def calculate_week_dates() -> Dict[str, datetime]:
     now = datetime.now()
     week_end = now
     week_start = now - timedelta(days=7)
-    briefing_date = now + timedelta(days=1)
+    briefing_date = now
 
     return {
         "week_start": week_start.replace(hour=0, minute=0, second=0, microsecond=0),
@@ -119,16 +119,20 @@ def calculate_api_cost_week(vault_path: str, week_start: datetime, week_end: dat
             log_date = datetime.strptime(date_str, "%Y-%m-%d")
             if not (week_start.date() <= log_date.date() <= week_end.date()):
                 continue
-            with open(log_file, "r", encoding="utf-8") as f:
-                for line in f:
-                    if line.startswith("|") and "$" in line:
-                        parts = line.split("|")
-                        # Column 6 (0-indexed) is Cost column
-                        for part in parts:
-                            m = re.search(r'\$(\d+\.\d+)', part.strip())
-                            if m:
-                                total += float(m.group(1))
-                                break
+            content = log_file.read_text(encoding="utf-8")
+            # Try YAML frontmatter first (cost: 0.003552)
+            cost_match = re.search(r'^cost:\s*([\d.]+)', content, re.MULTILINE)
+            if cost_match:
+                total += float(cost_match.group(1))
+                continue
+            # Fallback: markdown table format (| $0.0042 |)
+            for line in content.splitlines():
+                if line.startswith("|") and "$" in line:
+                    for part in line.split("|"):
+                        m = re.search(r'\$(\d+\.\d+)', part.strip())
+                        if m:
+                            total += float(m.group(1))
+                            break
         except Exception:
             continue
     return round(total, 4)
