@@ -618,40 +618,43 @@ def _type_and_send_message(page, text: str) -> bool:
     clean_text = text.replace('\n', ' ').replace('\r', '')
     methods = []
 
-    # Method A: execCommand via JS (instant — no char-by-char typing)
-    def method_execcommand():
-        page.evaluate("""() => {
-            // Find the compose box specifically (not search input)
+    # Method A: locator.fill() — Playwright native, works on [contenteditable], instant
+    def method_fill():
+        msg_box.fill(clean_text)
+    methods.append(("fill()", method_fill))
+
+    # Method B: JS clipboard paste — set innerHTML + dispatch input event
+    def method_js_set():
+        page.evaluate("""(text) => {
             const sels = [
-                '[data-testid="conversation-compose-box-input"]',
-                'div[contenteditable="true"][data-tab="10"]',
                 'footer div[contenteditable="true"]',
+                'div[contenteditable="true"][data-tab="10"]',
                 'div[contenteditable="true"][role="textbox"]',
             ];
             for (const s of sels) {
                 const el = document.querySelector(s);
-                if (el) { el.focus(); el.click(); return; }
+                if (el) {
+                    el.focus();
+                    el.textContent = '';
+                    document.execCommand('insertText', false, text);
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                    return;
+                }
             }
-        }""")
-        page.wait_for_timeout(300)
-        page.evaluate("""(text) => {
-            document.execCommand('selectAll');
-            document.execCommand('delete');
-            document.execCommand('insertText', false, text);
         }""", clean_text)
-    methods.append(("execCommand", method_execcommand))
+    methods.append(("js_set", method_js_set))
 
-    # Method B: insert_text (instant — Playwright native, pastes all at once)
+    # Method C: insert_text (instant — Playwright native, pastes all at once)
     def method_insert():
         msg_box.click()
         page.wait_for_timeout(300)
         page.keyboard.press("Control+a")
         page.keyboard.press("Delete")
         page.wait_for_timeout(200)
-        page.keyboard.insert_text(text)
+        page.keyboard.insert_text(clean_text)
     methods.append(("insert_text()", method_insert))
 
-    # Method C: keyboard.type() (SLOW — char-by-char, last resort only)
+    # Method D: keyboard.type() (SLOW — char-by-char, last resort only)
     def method_type():
         msg_box.click()
         page.wait_for_timeout(300)
