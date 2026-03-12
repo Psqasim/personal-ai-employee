@@ -454,14 +454,21 @@ def _wait_for_whatsapp(page) -> bool:
     try:
         page.wait_for_selector(f'{CHAT_LIST}, {QR_CODE}', timeout=90000, state='attached')
     except PlaywrightTimeout:
-        # Log what's on the page so we can diagnose the stuck state
-        logger.error(f"Selector timeout — URL: {page.url} | Title: {page.title()}")
+        # WhatsApp Web may have updated their DOM — check if page content
+        # looks like a loaded chat list even if selectors don't match
         try:
-            body_text = page.locator('body').inner_text(timeout=5000)[:300]
-            logger.error(f"Page body: {body_text}")
+            body_text = page.locator('body').inner_text(timeout=5000)[:500]
         except Exception:
-            pass
-        return False
+            body_text = ""
+
+        # If page has chat-like content, proceed anyway (DOM selectors stale)
+        chat_indicators = ["Search or start a new chat", "Type a message", "Chats"]
+        if any(ind in body_text for ind in chat_indicators):
+            logger.warning(f"Selector timeout but page has chat content — proceeding anyway")
+        else:
+            logger.error(f"Selector timeout — URL: {page.url} | Title: {page.title()}")
+            logger.error(f"Page body: {body_text[:300]}")
+            return False
     # Check any login-required indicator (canvas OR img QR, landing page, phone link)
     # Also check absence of chat list as final fallback (page loaded but no chats = logged out)
     is_login_page = any(
@@ -1167,6 +1174,45 @@ def run_cycle(warm_up: bool = False):
                     if not rows:
                         # Broadest fallback: any clickable row with role=listitem or row
                         rows = page.locator('div[role="listitem"], div[role="row"]').all()
+                    if not rows:
+                        # Ultimate fallback: use JS to find chat-like elements
+                        try:
+                            js_rows = page.evaluate('''() => {
+                                // Find all elements with a title attribute that looks like a phone/contact
+                                const spans = document.querySelectorAll('span[title]');
+                                const chatParents = new Set();
+                                for (const s of spans) {
+                                    // Walk up to find a clickable row-like parent
+                                    let el = s;
+                                    for (let i = 0; i < 6; i++) {
+                                        el = el.parentElement;
+                                        if (!el) break;
+                                        if (el.getAttribute('role') === 'listitem' ||
+                                            el.getAttribute('role') === 'row' ||
+                                            el.getAttribute('role') === 'option' ||
+                                            el.getAttribute('tabindex') === '-1' ||
+                                            el.getAttribute('data-testid')) {
+                                            chatParents.add(el.getAttribute('data-testid') || el.getAttribute('role') || 'div');
+                                            break;
+                                        }
+                                    }
+                                }
+                                return Array.from(chatParents);
+                            }''')
+                            if js_rows:
+                                logger.info(f"JS fallback found chat parent types: {js_rows[:5]}")
+                                # Try the discovered selectors
+                                for attr in js_rows[:3]:
+                                    if attr in ('listitem', 'row', 'option'):
+                                        rows = page.locator(f'div[role="{attr}"]').all()
+                                    elif attr.startswith('div'):
+                                        pass
+                                    else:
+                                        rows = page.locator(f'[data-testid="{attr}"]').all()
+                                    if rows:
+                                        break
+                        except Exception as e:
+                            logger.debug(f"JS chat fallback error: {e}")
                     logger.info(f"Found {len(rows)} chats, checking first {CHATS_TO_CHECK}")
 
                     for i, row in enumerate(rows[:CHATS_TO_CHECK]):
