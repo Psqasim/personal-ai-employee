@@ -669,7 +669,10 @@ rm -rf ~/.whatsapp_session_dir
 
 # 3. MUST cd to /tmp first — WSL2 Playwright hangs if CWD is on /mnt/d Windows mount
 cd /tmp
-python "/mnt/d/gov ai code/QUATER 4 part 2/hacakthon/personal-ai-employee/scripts/wa_local_setup.py"
+
+# 4. Use the project venv (has Playwright installed) — NOT system python3
+"/mnt/d/gov ai code/QUATER 4 part 2/hacakthon/personal-ai-employee/venv/bin/python" \
+  "/mnt/d/gov ai code/QUATER 4 part 2/hacakthon/personal-ai-employee/scripts/wa_local_setup.py"
 ```
 
 After ~25 seconds you'll see:
@@ -743,6 +746,74 @@ pm2 logs whatsapp_watcher --lines 50
 | `Session NOT valid` (--check-only) | Session expired or never transferred | Run `wa_session_to_cloud.sh` from local |
 | `Error: ... zombie processes` | Previous Chrome processes not cleaned | `pkill -9 -f chromium` then run reauth |
 | Code looks correct but phone rejects | WhatsApp rate-limited from failed attempts | Wait 15-30 min, then use session transfer |
+
+### WhatsApp Watcher Stuck / 0 Logs / High CPU (Cloud)
+
+**Symptom:** `pm2 list` shows whatsapp_watcher as "online" but:
+- Logs are empty (`pm2 logs whatsapp_watcher` shows nothing)
+- CPU usage is very high (90-100%)
+- No WhatsApp messages are being sent or replied to
+- Process has been "online" for many days but doing nothing
+
+**What happened:** The watcher got stuck in an infinite loop. This happens when:
+1. Chrome became unresponsive (low memory — the VM only has 1GB RAM)
+2. A Playwright operation (like finding the compose box) timed out
+3. The 10-minute cycle timeout fired, but the recovery code after it also got stuck
+4. The Python process keeps running at 100% CPU but produces zero output
+
+**How to check if this is your issue:**
+
+```bash
+# SSH into the cloud VM
+ssh -i ~/.ssh/ssh-key-2026-02-17.key ubuntu@129.151.151.212
+
+# Check if watcher logs are empty (this confirms it's stuck)
+pm2 logs whatsapp_watcher --lines 5 --nostream
+
+# Check CPU usage — if it shows 90%+ for the watcher, it's stuck
+ps aux | grep whatsapp_watcher | grep -v grep
+```
+
+If you see 0 log lines AND high CPU — the watcher is stuck. Follow the fix below.
+
+**How to fix (run these commands on the cloud VM):**
+
+```bash
+# Step 1: Kill all stuck Chrome processes
+kill -9 $(pgrep -f chrome-headless) 2>/dev/null
+
+# Step 2: Restart the watcher
+pm2 restart whatsapp_watcher
+
+# Step 3: Wait 30 seconds, then check logs
+pm2 logs whatsapp_watcher --lines 15 --nostream
+```
+
+You should see fresh logs like:
+```
+🤖 WhatsApp Watcher started (Platinum Tier)
+WhatsApp page loaded — URL: https://web.whatsapp.com/
+Found 11 chats, checking first 10
+```
+
+**If it gets stuck again within minutes:**
+```bash
+# Check free memory — if less than 100MB free, the VM is overloaded
+free -m
+
+# Option A: Restart all PM2 processes (frees memory)
+pm2 restart all
+
+# Option B: Stop non-essential processes to free RAM
+pm2 stop nextjs_dashboard   # dashboard uses ~22MB, stop if not needed
+pm2 restart whatsapp_watcher
+```
+
+**Quick one-liner (copy-paste to fix it fast):**
+```bash
+ssh -i ~/.ssh/ssh-key-2026-02-17.key ubuntu@129.151.151.212 "kill -9 \$(pgrep -f chrome-headless) 2>/dev/null; pm2 restart whatsapp_watcher"
+```
+This command SSHs in, kills stuck Chrome, and restarts the watcher — all in one line from your local terminal.
 
 ### Chrome Lock Conflict
 

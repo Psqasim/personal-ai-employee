@@ -123,7 +123,21 @@ def handle_request(request: Dict[str, Any]) -> Dict[str, Any]:
     request_id = request.get("id")
 
     try:
-        if method == "tools/list":
+        if method == "initialize":
+            return {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {"tools": {}},
+                    "serverInfo": {"name": "email-mcp", "version": "1.0.0"}
+                }
+            }
+
+        elif method == "notifications/initialized":
+            return None
+
+        elif method == "tools/list":
             result = tools_list()
             return {"jsonrpc": "2.0", "id": request_id, "result": result}
 
@@ -169,7 +183,8 @@ def main():
         try:
             request = json.loads(line)
             response = handle_request(request)
-            print(json.dumps(response), flush=True)
+            if response is not None:
+                print(json.dumps(response), flush=True)
         except json.JSONDecodeError:
             error_response = {
                 "jsonrpc": "2.0",

@@ -354,6 +354,20 @@ def handle_jsonrpc_request(request: Dict) -> Dict:
     params = request.get("params", {})
 
     try:
+        if method == "initialize":
+            return {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {"tools": {}},
+                    "serverInfo": {"name": "odoo-mcp", "version": "1.0.0"}
+                }
+            }
+
+        elif method == "notifications/initialized":
+            return None
+
         # Initialize Odoo server
         server = OdooMCPServer()
 
@@ -507,7 +521,8 @@ def main():
         try:
             request = json.loads(line.strip())
             response = handle_jsonrpc_request(request)
-            print(json.dumps(response), flush=True)
+            if response is not None:
+                print(json.dumps(response), flush=True)
 
         except json.JSONDecodeError as e:
             error_response = {

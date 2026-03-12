@@ -23,7 +23,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 # ── Thresholds from env (override in .env) ─────────────────────────────────────
-_CPU_THRESHOLD = float(os.getenv("CPU_ALERT_THRESHOLD", "80"))
+_CPU_THRESHOLD = float(os.getenv("CPU_ALERT_THRESHOLD", "99"))
 _MEM_THRESHOLD = float(os.getenv("MEM_ALERT_THRESHOLD", "90"))
 _CHECK_INTERVAL = int(os.getenv("RESOURCE_CHECK_INTERVAL_SEC", "300"))  # 5 min
 
