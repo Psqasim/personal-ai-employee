@@ -614,20 +614,11 @@ def _type_and_send_message(page, text: str) -> bool:
         logger.debug(f"CE dump failed: {e}")
 
     # Step 4: Try typing methods — each one verifies text appeared
+    # IMPORTANT: Fast methods first! keyboard.type() is char-by-char and times out on 1GB servers
     clean_text = text.replace('\n', ' ').replace('\r', '')
     methods = []
 
-    # Method A: Click compose box + keyboard.type() (proven to work in search)
-    def method_type():
-        msg_box.click()
-        page.wait_for_timeout(300)
-        page.keyboard.press("Control+a")
-        page.keyboard.press("Delete")
-        page.wait_for_timeout(200)
-        page.keyboard.type(clean_text, delay=10)
-    methods.append(("keyboard.type()", method_type))
-
-    # Method B: execCommand via JS (direct DOM manipulation)
+    # Method A: execCommand via JS (instant — no char-by-char typing)
     def method_execcommand():
         page.evaluate("""() => {
             // Find the compose box specifically (not search input)
@@ -650,7 +641,7 @@ def _type_and_send_message(page, text: str) -> bool:
         }""", clean_text)
     methods.append(("execCommand", method_execcommand))
 
-    # Method C: insert_text (fallback)
+    # Method B: insert_text (instant — Playwright native, pastes all at once)
     def method_insert():
         msg_box.click()
         page.wait_for_timeout(300)
@@ -659,6 +650,16 @@ def _type_and_send_message(page, text: str) -> bool:
         page.wait_for_timeout(200)
         page.keyboard.insert_text(text)
     methods.append(("insert_text()", method_insert))
+
+    # Method C: keyboard.type() (SLOW — char-by-char, last resort only)
+    def method_type():
+        msg_box.click()
+        page.wait_for_timeout(300)
+        page.keyboard.press("Control+a")
+        page.keyboard.press("Delete")
+        page.wait_for_timeout(200)
+        page.keyboard.type(clean_text, delay=5)
+    methods.append(("keyboard.type()", method_type))
 
     for name, method_fn in methods:
         try:
