@@ -454,20 +454,27 @@ def _wait_for_whatsapp(page) -> bool:
     try:
         page.wait_for_selector(f'{CHAT_LIST}, {QR_CODE}', timeout=90000, state='attached')
     except PlaywrightTimeout:
-        # WhatsApp Web may have updated their DOM — check if page content
-        # looks like a loaded chat list even if selectors don't match
+        # WhatsApp Web may have updated their DOM — check if page is actually
+        # loaded even though selectors don't match (DOM structure changed)
+        page_title = ""
         try:
-            body_text = page.locator('body').inner_text(timeout=5000)[:500]
+            page_title = page.title()
         except Exception:
-            body_text = ""
+            pass
 
-        # If page has chat-like content, proceed anyway (DOM selectors stale)
-        chat_indicators = ["Search or start a new chat", "Type a message", "Chats"]
-        if any(ind in body_text for ind in chat_indicators):
-            logger.warning(f"Selector timeout but page has chat content — proceeding anyway")
+        if "WhatsApp" in page_title:
+            # Page IS loaded (title=WhatsApp) but selectors are stale — proceed
+            logger.warning(f"Selector timeout but title='{page_title}' — proceeding (DOM update)")
         else:
-            logger.error(f"Selector timeout — URL: {page.url} | Title: {page.title()}")
-            logger.error(f"Page body: {body_text[:300]}")
+            # Genuinely not loaded
+            body_text = ""
+            try:
+                body_text = page.evaluate("document.body?.textContent?.substring(0, 300) || ''")
+            except Exception:
+                pass
+            logger.error(f"Selector timeout — URL: {page.url} | Title: {page_title}")
+            if body_text:
+                logger.error(f"Page body: {body_text[:200]}")
             return False
     # Check any login-required indicator (canvas OR img QR, landing page, phone link)
     # Also check absence of chat list as final fallback (page loaded but no chats = logged out)
