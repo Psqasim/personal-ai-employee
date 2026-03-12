@@ -1,218 +1,291 @@
-# Personal AI Employee - Demo Video Script (5-7 minutes)
+# Personal AI Employee - Demo Video Script
 
 > **Speaker:** Muhammad Qasim
-> **Format:** Screen recording + voiceover (no face cam)
-> **Dashboard URL:** http://129.151.151.212:3000/dashboard (cloud — everything works here)
-> **Recording:** OBS Studio (laptop screen) + Phone screen recorder (WhatsApp)
-> **Editing:** CapCut (free) — cut out waiting time, join clips
+> **Dashboard:** http://129.151.151.212:3000 (cloud — use this, not localhost)
+> **Recording:** OBS on laptop only — everything is on laptop screen!
+> **Editing:** CapCut (free) — cut the waiting parts, join all clips
+> **Final video:** 5-7 minutes after cuts
 
 ---
 
-## My Recording Strategy
+## How to Record
 
-**Best approach: Record everything with waiting, then CUT in editor.**
+**Record everything on laptop with OBS, then cut waiting parts in CapCut.**
 
-Why this is better:
-- No pressure — take your time, make mistakes, redo anything
-- Wait 2-3 minutes for WhatsApp/email to process — just wait, cut later
-- Record laptop screen AND phone screen separately, combine in editor
-- Add voiceover AFTER recording if you want (or talk while recording)
+Only 1 recording needed — OBS on laptop records everything:
+- Browser (dashboard, Gmail, Odoo, GitHub)
+- Terminal (SSH, PM2 logs)
+- WhatsApp Desktop app (main number — shows messages arriving)
+- WhatsApp Web in browser tab (2nd number — for sending commands to the bot)
 
-**You need 2 recordings running at same time:**
-1. **OBS on laptop** — records browser (dashboard) + terminal
-2. **Phone screen recorder** — records WhatsApp messages arriving
-
-After recording, open CapCut, put laptop video as main, and overlay phone video in corner when showing WhatsApp.
+No phone recording needed! Everything is on your laptop screen.
 
 ---
 
-## BEFORE RECORDING — Setup (30 min before)
+## Before You Start (30 min before)
 
-### Step 1: Open Cloud Dashboard
-Open browser: `http://129.151.151.212:3000`
-Login with your admin credentials. Make sure dark mode is on.
+### Browser Tabs (open all):
+- Tab 1: `http://129.151.151.212:3000` — Dashboard (login, dark mode ON)
+- Tab 2: `https://web.whatsapp.com` — Login with your **2nd number** (for sending commands)
+- Tab 3: `https://personal-ai-employee2.odoo.com` (Odoo, logged in)
+- Tab 4: `https://www.linkedin.com` (LinkedIn, logged in)
+- Tab 5: `https://github.com/Psqasim/personal-ai-employee`
+- Tab 6: `https://mail.google.com` (Gmail)
 
-### Step 2: Check Cloud VM
-```bash
-ssh -i ~/.ssh/ssh-key-2026-02-17.key ubuntu@129.151.151.212
-pm2 list
-pm2 logs whatsapp_watcher --lines 5 --nostream
-exit
-```
-All 4 processes should be "online". Watcher should show recent logs.
+### WhatsApp Desktop App:
+- Open WhatsApp Desktop (already installed on laptop)
+- Link it to your **main number** (923460326429) — scan QR from phone
+- This shows messages arriving from the bot
+- (Cloud bot is a separate linked device — it won't conflict)
 
-### Step 3: Clean Up Dashboard
-- Go to Approvals tab — approve or reject old items so it looks clean
-- Or leave 1-2 items there to show in demo
-
-### Step 4: Open These Tabs
-1. `http://129.151.151.212:3000/dashboard` (main dashboard)
-2. `http://129.151.151.212:3000/dashboard/status` (MCP status)
-3. `http://129.151.151.212:3000/dashboard/briefings` (CEO briefing)
-4. `https://personal-ai-employee2.odoo.com` (Odoo — logged in)
-5. `https://github.com/Psqasim/personal-ai-employee` (GitHub repo)
-6. Terminal (WSL2) ready for SSH
-
-### Step 5: Phone Ready
-- Open WhatsApp on phone
-- Start phone screen recorder (keep recording the whole time)
-- Keep phone next to laptop
-
-### Step 6: Start OBS Recording
-- Record full screen at 1080p
-- Start recording!
+### Other:
+- Open terminal (WSL2)
+- Start OBS recording (full screen, 1080p)
+- Bismillah, start!
 
 ---
 
-## SCENE 1: Introduction (30 seconds)
+## SCENE 1: Introduction (30 sec)
 
-**Screen:** Terminal
+**Show:** Terminal
 
-**Do:** Show project folder
+**Do:** Type:
 ```bash
 cd "/mnt/d/gov ai code/QUATER 4 part 2/hacakthon/personal-ai-employee"
 ls
 ```
 
 **Say:**
-"Assalam o Alaikum! I am Muhammad Qasim. This is my Personal AI Employee — an autonomous business assistant for the GIAIC Hackathon. It manages emails, WhatsApp, Odoo accounting, and LinkedIn — running 24/7 on Oracle Cloud with human approval. Let me show you."
+"Assalam o Alaikum! My name is Muhammad Qasim. This is my project — Personal AI Employee. I built it for the GIAIC Hackathon. It handles my emails, WhatsApp messages, Odoo invoices, and LinkedIn posts. It runs 24/7 on Oracle Cloud — free tier, only 1 GB RAM. Some things take 1-2 minutes because of the small server. And every action needs my approval first. Let me show you how it works."
 
-**Then:** Switch to dashboard browser tab.
-
----
-
-## SCENE 2: Dashboard Overview (45 seconds)
-
-**Screen:** Browser — `http://129.151.151.212:3000`
-
-**Do:** Show login page (glass design, particles). Login.
-
-**Say:**
-"This is the admin dashboard — Next.js 16 with glassmorphism design, dark mode, particle animations."
-
-**Do:** After login, point mouse at stats cards.
-
-**Say:**
-"The dashboard shows real-time numbers — pending tasks, in progress, and completed. These tabs show approvals, completed items, API usage, and the vault file browser."
-
-**Do:** Quickly click each tab to show them.
+**Do:** Switch to browser (dashboard tab).
 
 ---
 
-## SCENE 3: Send WhatsApp from Dashboard (2-3 min recording, cut to 50 sec)
+## SCENE 2: Dashboard Login (45 sec)
 
-**Screen:** Browser — Dashboard
-
-> **Wait time:** ~1-2 min for message to arrive on WhatsApp. KEEP RECORDING. Cut the wait in editing.
-
-**Do:** Click "Quick Create" in sidebar. Click "WhatsApp" tab.
-
-**Fill in:**
-- Phone: `923460326429` (your own number)
-- Message: Click **"AI Generate"** button — let Claude write the message
-- OR type: `Assalamu Alaikum! Meeting confirmed for tomorrow 3 PM. See you there InshaAllah!`
+**Show:** Browser — login page
 
 **Say:**
-"Quick Create lets me send anything — emails, WhatsApp, invoices, LinkedIn posts. Let me send a WhatsApp message. I can type it myself or click AI Generate to let Claude write it."
+"This is the dashboard. I built it with Next.js 16. You can see the glass design, dark mode, particle animation in background."
 
-**Do:** Click Submit.
-
-**Say:**
-"It creates a draft in the vault. Now I approve it..."
-
-**Do:** Go to Approvals tab. Find the WhatsApp draft. Click "Approve & Send".
+**Do:** Type email and password. Click Login.
 
 **Say:**
-"I click Approve and Send. The cloud watcher picks it up and sends via Playwright browser automation."
+"After login, you see the main page. These three cards show how many tasks are pending, in progress, and completed."
 
-**Do:** Wait for message to arrive on phone (1-2 min). Keep recording. When it arrives:
+**Do:** Point mouse at each card slowly.
 
 **Say:**
-"And there it is — message received on WhatsApp! Sent from the cloud through browser automation."
+"Down here we have four tabs — Approvals, Completed, API Usage, and Vault Browser. Let me show you the Approvals tab."
 
-> **In editing:** Cut the 1-2 min waiting to ~5 seconds with a fade/cut.
+**Do:** Click Approvals tab. Show the items.
 
 ---
 
-## SCENE 4: Send Email from Dashboard (2-3 min recording, cut to 45 sec)
+## SCENE 3: Send WhatsApp from Dashboard (record 3 min, cut to 1 min)
 
-**Screen:** Browser — Dashboard
+**Show:** Browser — Dashboard
 
-> **Wait time:** ~30-60 sec for email to send. Cut in editing.
+**Do:** Click "Quick Create" button in sidebar.
 
-**Do:** Click "Quick Create". Click "Email" tab.
+**Say:**
+"This is Quick Create. From here I can send emails, WhatsApp messages, invoices, or LinkedIn posts. Let me send a WhatsApp message."
 
-**Fill in:**
-- To: `muhammadqasim0326@gmail.com` (your own email)
+**Do:** Click "WhatsApp" tab. Fill in:
+- Phone: `923460326429`
+- Message: Click **"AI Generate"** button
+
+**Say:**
+"I type the phone number. And I click AI Generate — Claude AI writes the message for me. I can also type it myself."
+
+**Do:** Wait for AI to generate (5-10 sec). Then click Submit.
+
+**Say:**
+"I click Submit. WhatsApp messages go directly — no approval needed. The cloud server picks it up and sends it using Playwright browser automation."
+
+**Say (while waiting — fill the gap):**
+"My cloud server is Oracle Always Free tier — only 1 GB RAM. So it takes 1-2 minutes to process. It opens WhatsApp Web, finds the chat, types the message, and clicks send. All automatic."
+
+**Do:** Keep recording. Switch to WhatsApp Desktop app. Wait 1-2 min for message to arrive.
+
+> **While waiting:** Stay quiet or say: "Let me check if the message arrived..." — then switch to WhatsApp Desktop.
+
+**Say (when it arrives):**
+"And there — message received on my WhatsApp! Sent from the cloud."
+
+**Do:** Now switch to terminal. SSH into cloud and show logs:
+```bash
+ssh -i ~/.ssh/ssh-key-2026-02-17.key ubuntu@129.151.151.212
+pm2 logs whatsapp_watcher --lines 5 --nostream
+```
+
+**Say:**
+"And in the cloud logs — you can see it found the chat, typed the message, and sent it. Everything is logged."
+
+**Do:** Type `exit` to leave SSH.
+
+> **In editing:** Cut the 1-2 min wait to 3-5 seconds. Keep the logs part.
+
+---
+
+## SCENE 4: Send Email + Show in Gmail + Show Logs (record 3 min, cut to 1 min)
+
+**Show:** Browser — Dashboard
+
+**Do:** Click "Quick Create". Click "Email" tab. Fill in:
+- To: `muhammadqasim0326@gmail.com`
 - Subject: `Project Update - AI Employee Demo`
-- Click **"AI Generate"** to let Claude write the body
+- Click **"AI Generate"**
 
 **Say:**
-"Now an email. I type the address and subject, then click AI Generate — Claude writes a professional email body."
+"Now let me send an email. I type my email address and subject. Then I click AI Generate — Claude writes a professional email."
 
-**Do:** Click Submit. Go to Approvals tab. Click "Approve & Send".
+**Do:** Wait for AI to generate (5-10 sec). Then click Submit.
+
+> **While AI generates:** Stay quiet — just wait 2-3 seconds.
 
 **Say:**
-"Same approval flow — the AI drafts, I review, I approve. The email goes out via SMTP. No email ever sends without my approval."
+"Emails are different from WhatsApp — emails need my approval first. This is a safety rule. Let me go to Approvals."
 
-**Do:** Show email arrived in Gmail (open Gmail tab or show on phone).
+**Do:** Click Approvals tab. Find the email draft. Click "Approve & Send".
 
-> **In editing:** Cut waiting time.
+**Say:**
+"I can see the full email here. Subject, body, everything. If it looks good, I click Approve and Send."
+
+**Do:** Click Approve. Wait 10-30 sec.
+
+> **While waiting:** Stay quiet for 2-3 seconds. No need to talk.
+
+**Say:**
+"Now let me show you — the email is already in my Gmail."
+
+**Do:** Switch to Gmail tab. Show the received email.
+
+**Say:**
+"See? Here it is in Gmail. Same subject, same body. Sent by the AI, approved by me."
+
+**Do:** Now switch to terminal. SSH into cloud:
+```bash
+ssh -i ~/.ssh/ssh-key-2026-02-17.key ubuntu@129.151.151.212
+pm2 logs --lines 10 --nostream
+```
+
+**Say:**
+"And if I check the cloud logs — you can see it here. The email was approved, sent via SMTP, logged. Everything is tracked."
+
+**Do:** Type `exit` to leave SSH.
+
+> **In editing:** Cut the waiting parts.
 
 ---
 
-## SCENE 5: Create Odoo Invoice (50 seconds)
+## SCENE 5: Odoo Invoice (50 sec)
 
-**Screen:** Browser — Dashboard + Odoo tab
+**Show:** Browser — Dashboard
 
-**Do:** Click "Quick Create". Click "Invoice" tab.
-
-**Fill in:**
+**Do:** Click "Quick Create". Click "Invoice" tab. Fill in:
 - Customer: Ali
 - Amount: 5000
 - Description: Web design project
 
+**Say:**
+"Now Odoo accounting. I can create invoices, contacts, payments, and bills from here. Let me create an invoice for my client Ali — 5000 rupees for web design."
+
 **Do:** Click Submit.
 
 **Say:**
-"Odoo accounting integration — I create invoices, contacts, payments, and bills. This creates a DRAFT invoice in Odoo. The system never auto-confirms financial transactions — that is a safety rule."
+"It creates a DRAFT invoice in Odoo. Very important — the system never confirms any money transaction. Only draft. I have to confirm it myself in Odoo."
 
 **Do:** Switch to Odoo browser tab. Show the draft invoice.
 
 **Say:**
-"See? Draft state in Odoo. I have to manually confirm it. The AI employee cannot spend my money."
+"See? Here in Odoo — draft state. 5000 rupees, customer Ali. The AI employee cannot spend my money. I have to click Confirm myself."
 
 ---
 
-## SCENE 6: WhatsApp Auto-Reply from Mobile (2-3 min recording, cut to 50 sec)
+## SCENE 6: LinkedIn Post (record 1 min, cut to 40 sec)
 
-**Screen:** Phone screen recording (WhatsApp)
+**Show:** Browser — Dashboard
 
-> **This is the big demo moment.** You send a command from WhatsApp, the AI processes it and replies.
-> **Wait time:** 2-5 min for AI to reply. KEEP PHONE RECORDING. Cut in editing.
+**Do:** Click "Quick Create" in sidebar. Click "LinkedIn" tab.
 
-**Do on phone:** Open WhatsApp. Send message to your own number (the bot reads it):
+**Say:**
+"Now LinkedIn. I can post on LinkedIn from here. Let me create a post."
+
+**Do:** Click **"AI Generate"** button. Wait 5-10 sec for AI to write the post.
+
+> **While AI generates:** Stay quiet — just wait 2-3 seconds. It's fast.
+
+**Say:**
+"Claude AI wrote a professional LinkedIn post for me. I can edit it if I want. But this looks good."
+
+**Do:** Click Submit.
+
+**Say:**
+"I click Submit. The system posts it on my LinkedIn using the LinkedIn API. Let me show you."
+
+**Do:** Switch to browser. Open LinkedIn tab. Go to your profile. Show the post.
+
+> **While LinkedIn loads:** Stay quiet — just wait for the page.
+
+**Say:**
+"And here it is on my LinkedIn profile. Posted by the AI, from the dashboard. I did not open LinkedIn — the system did everything."
+
+> **In editing:** Cut any wait time.
+
+---
+
+## SCENE 7: WhatsApp Command + Auto-Reply (record 5 min, cut to 1 min)
+
+**Show:** Browser — WhatsApp Web tab (2nd number) + WhatsApp Desktop app (main number)
+
+> Everything on laptop! WhatsApp Web = 2nd number (sends commands). WhatsApp Desktop = main number (sees replies).
+
+### Part A: Send Command
+
+**Do:** Switch to WhatsApp Web tab (2nd number). Send this message to your main number:
 ```
 Hey send a WhatsApp message with Salam and Quran verse to 923011496677
 ```
 
-**Say (voiceover, add later):**
-"Now the coolest part — I can give commands directly from WhatsApp. I tell the AI to send a message with a Quran verse to a friend."
+**Say:**
+"Now the best part. I can give commands from WhatsApp. Watch — I send a message from my second number telling the AI to send a Quran verse to my friend."
 
-**Do:** Wait for the bot to reply with confirmation (1-3 min).
+**Do:** Switch to WhatsApp Desktop app (main number). Wait 1-3 min for bot reply.
+
+**Say (while waiting — fill the gap):**
+"The cloud is 1 GB RAM — Oracle Free tier. So it takes 1-2 minutes. The bot reads my command, uses Claude AI to write the message, opens WhatsApp Web, finds the contact, and sends. All automatic."
+
+> **While waiting:** If still no reply after saying above, stay quiet. Just keep WhatsApp Desktop open on screen.
+
+**Say (when reply comes):**
+"There it is! The AI read my command, wrote the message, and sent it. You can see the confirmation here."
+
+### Part B: Auto-Reply
+
+**Do:** Switch to WhatsApp Web tab (2nd number). Send a message to your main number:
+```
+Hi Qasim, are you free tomorrow for a meeting?
+```
 
 **Say:**
-"The cloud agent reads my WhatsApp command, uses Claude AI to generate the message, and sends it. All from my phone — no dashboard needed."
+"Now I send a normal message — like someone asking me a question. The AI will auto-reply on my behalf."
 
-**Do:** Show the AI's confirmation reply and the delivered message.
+**Do:** Switch to WhatsApp Desktop app (main number). Wait 2-5 min for AI auto-reply.
 
-> **In editing:** Cut waiting time. Show command sent, then quick cut to reply received.
+> **While waiting:** Stay quiet. Just show the WhatsApp Desktop screen.
+
+**Say (when AI replies):**
+"And here is the AI auto-reply. It gave a natural answer with my schedule. And at the end it says 'Qasim's AI Assistant' — so people know it is AI, not me."
+
+> **In editing:** Cut all waiting parts. Show: command sent → cut → reply. Question sent → cut → AI answer.
 
 ---
 
-## SCENE 7: Oracle Cloud — SSH & PM2 Logs (50 seconds)
+## SCENE 8: Cloud Server — PM2 Status (40 sec)
 
-**Screen:** Terminal
+**Show:** Terminal
 
 **Do:**
 ```bash
@@ -221,139 +294,117 @@ pm2 list
 ```
 
 **Say:**
-"The cloud side — Oracle Cloud VM running 24/7 for free. Four PM2 processes: orchestrator watches Gmail, git sync pulls code every 60 seconds, WhatsApp watcher sends approved messages, and auto-reply handles WhatsApp with AI."
+"This is my Oracle Cloud server. It runs 24/7 for free — Oracle Always Free tier. You can see four processes always running."
 
-**Do:** Run `pm2 logs --lines 20`
+**Do:** Point at each row.
 
 **Say:**
-"Live logs — you can see it actively checking emails, processing WhatsApp messages, sending notifications."
+"Cloud orchestrator watches my Gmail. Git sync pulls code from GitHub every 60 seconds. The dashboard is this website. And WhatsApp watcher handles all the messaging and AI replies."
 
-**Do:** Ctrl+C, then `exit`.
+**Do:** Type `exit`.
 
 ---
 
-## SCENE 8: CEO Briefing + MCP Status (40 seconds)
+## SCENE 9: CEO Briefing + MCP Status (40 sec)
 
-**Screen:** Browser — Dashboard
+**Show:** Browser — Dashboard
 
-**Do:** Click "Briefings" in sidebar. Click on latest briefing.
-
-**Say:**
-"Every week, the AI generates a CEO Briefing — task summary, API costs, and business suggestions. It tells me what was done, how much it cost, and what to focus on next week."
-
-**Do:** Scroll through briefing briefly. Then click "Server Status" in sidebar.
+**Do:** Click "Briefings" in sidebar. Click on the latest briefing. Scroll slowly.
 
 **Say:**
-"MCP server status — all services online. Email, Gmail, WhatsApp, Odoo, LinkedIn, Twitter. Each is a separate MCP server."
+"Every week, the AI makes a CEO Briefing. It counts how many tasks I completed, how much API cost I spent, and gives me suggestions for next week. Like a weekly report from my AI employee."
+
+**Do:** Click "Server Status" in sidebar.
+
+**Say:**
+"And this is the MCP server status. All my services are online — Email, Gmail, WhatsApp, Odoo, LinkedIn, Twitter. Each one is a separate MCP server that Claude AI can use."
 
 ---
 
-## SCENE 9: Vault Browser + Obsidian Comparison (40 seconds)
+## SCENE 10: Vault Browser (30 sec)
 
-**Screen:** Browser — Dashboard
+**Show:** Browser — Dashboard
 
-**Do:** Click "Vault Browser" tab on main dashboard. Expand a Done/WhatsApp file.
-
-**Say:**
-"The Vault Browser shows every file — completed items, failed, pending. Each file has YAML metadata with full audit trail."
-
-**Do:** Open Obsidian briefly (if installed) OR just say:
+**Do:** Click "Vault Browser" tab. Expand a Done/WhatsApp file.
 
 **Say:**
-"In Silver tier, we used Obsidian vault with manual file moves for approvals. Now in Platinum tier, the dashboard does everything — one click to approve, reject, or create. Same vault system underneath, but much easier to use."
+"The Vault Browser shows every file in the system. Done items, failed items, pending items. Each file has full details — who sent it, when, what happened. Complete audit trail."
+
+**Do:** Click to expand one file. Show the YAML metadata.
+
+**Say:**
+"In the earlier Silver tier, I used Obsidian with manual file moves. Now the dashboard does everything — one click."
 
 ---
 
-## SCENE 10: GitHub Repo (20 seconds)
+## SCENE 11: GitHub (20 sec)
 
-**Screen:** Browser — GitHub
+**Show:** Browser — GitHub tab
 
-**Do:** Switch to GitHub tab. Show the repo page. Scroll to README.
+**Do:** Show the repo. Scroll to README.
 
 **Say:**
-"Full source code is open source on GitHub. Cloud agent, dashboard, 5 MCP servers, scripts, vault system — everything documented in the README."
+"Full source code is on GitHub. Cloud agent, dashboard, five MCP servers, all scripts, vault system. Everything is documented."
 
 ---
 
-## SCENE 11: Closing (30 seconds)
+## SCENE 12: Closing (30 sec)
 
-**Screen:** Browser — Dashboard
-
-**Do:** Show dashboard one last time.
+**Show:** Browser — Dashboard (main page)
 
 **Say:**
-"That is my Personal AI Employee. All five hackathon tiers complete — Bronze through Hackathon Plus. Running 24/7 on Oracle Cloud. Handles email, WhatsApp, LinkedIn, Odoo accounting — all with human approval at every step."
+"So this is my Personal AI Employee. All five hackathon tiers complete — Bronze, Silver, Gold, Platinum, and Hackathon Plus. It runs 24/7 on Oracle Cloud. Handles email, WhatsApp, LinkedIn, Odoo. And every action needs my approval."
 
-**Pause.**
+**Do:** Pause 2 seconds.
 
 **Say:**
-"Tech stack: Python, Next.js, Claude AI, Playwright, PM2, Oracle Cloud. Built solo with Claude Code. Thank you for watching! Assalam o Alaikum!"
+"I built this solo using Python, Next.js, Claude AI, Playwright, PM2, and Oracle Cloud. Claude Code was my pair programmer. Thank you for watching! Assalam o Alaikum!"
 
 ---
 
-## Timing (After Editing)
+## Timing After Editing
 
-| Scene | Topic | Final Duration |
-|-------|-------|---------------|
+| Scene | What | Time |
+|-------|------|------|
 | 1 | Introduction | 0:30 |
-| 2 | Dashboard Overview | 0:45 |
+| 2 | Dashboard Login | 0:45 |
 | 3 | WhatsApp from Dashboard | 0:50 |
-| 4 | Email from Dashboard | 0:45 |
+| 4 | Email + Gmail + Logs | 1:00 |
 | 5 | Odoo Invoice | 0:50 |
-| 6 | WhatsApp Auto-Reply (mobile) | 0:50 |
-| 7 | SSH & PM2 Logs | 0:50 |
-| 8 | CEO Briefing + MCP Status | 0:40 |
-| 9 | Vault Browser | 0:40 |
-| 10 | GitHub | 0:20 |
-| 11 | Closing | 0:30 |
-| **TOTAL (after cuts)** | | **~6:30** |
+| 6 | LinkedIn Post | 0:40 |
+| 7 | WhatsApp Phone (command + auto-reply) | 1:00 |
+| 8 | PM2 Cloud Status | 0:40 |
+| 9 | CEO Briefing + MCP | 0:40 |
+| 10 | Vault Browser | 0:30 |
+| 11 | GitHub | 0:20 |
+| 12 | Closing | 0:30 |
+| **Total after cuts** | | **~7:55** |
 
-**Raw recording time (before cuts):** ~15-20 minutes (because of waiting for WhatsApp/email)
-
----
-
-## Editing Guide (CapCut)
-
-### Step 1: Import All Clips
-- Import OBS laptop recording
-- Import phone WhatsApp screen recording
-
-### Step 2: Main Timeline
-Put laptop recording as the main video on timeline.
-
-### Step 3: Cut Waiting Time
-Find the parts where you waited 1-3 minutes for messages to send. Cut them:
-- Keep the "I click Approve" part
-- Cut to "And it arrived!" part
-- Add a quick fade transition between
-
-### Step 4: Add Phone Overlay
-When showing WhatsApp messages on phone:
-- Put phone recording as small overlay in bottom-right corner
-- Or split screen — laptop left, phone right
-
-### Step 5: Add Voiceover (Optional)
-If you didn't talk during recording:
-- Record voiceover separately
-- Match it to the video
-
-### Step 6: Final Touches
-- Add low background music (YouTube Audio Library — search "tech background")
-- Add text title at start: "Personal AI Employee — GIAIC Hackathon 2026"
-- Export at 1080p
+**Raw recording time:** ~22 minutes (because of WhatsApp/email wait)
+**After cutting waits in CapCut:** ~8 minutes
 
 ---
 
-## What Takes Time (Plan Your Patience)
+## Wait Times (So You Know When to Be Patient)
 
-| Action | Wait Time | What Happens |
-|--------|-----------|--------------|
-| Quick Create WhatsApp → Approve | 1-2 min | Cloud watcher picks up file, opens Chrome, sends |
-| Quick Create Email → Approve | 30-60 sec | SMTP sends immediately after approval |
-| AI Generate (any type) | 5-10 sec | Claude API generates content |
-| WhatsApp command from phone | 2-5 min | Cloud reads message, generates reply, sends |
-| Odoo invoice create | 5-10 sec | Direct API call, fast |
-| CEO Briefing generation | 10-20 sec | Python script, local processing |
+| Action | How Long to Wait |
+|--------|-----------------|
+| AI Generate button | 5-10 seconds |
+| WhatsApp message delivery | 1-2 minutes |
+| Email send after approve | 10-30 seconds |
+| Odoo invoice create | 5-10 seconds |
+| LinkedIn post publish | 5-15 seconds |
+| WhatsApp command reply | 1-3 minutes |
+| WhatsApp auto-reply | 2-5 minutes |
 
-**Total waiting across all scenes: ~8-10 minutes**
-**After editing cuts: video is 5-7 minutes**
+---
+
+## CapCut Editing (After Recording)
+
+1. Put laptop OBS video on main timeline
+2. Find waiting parts (1-3 min gaps where nothing happens) — cut them, add fade transition
+3. No phone overlay needed — everything is already on laptop screen!
+4. Add title text at start: "Personal AI Employee — GIAIC Hackathon 2026"
+5. Add background music (optional, low volume) — YouTube Audio Library, search "tech background"
+6. Export at 1080p
+7. Upload to YouTube or Google Drive
