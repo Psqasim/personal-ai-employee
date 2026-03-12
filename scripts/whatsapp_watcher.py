@@ -1172,6 +1172,8 @@ def run_cycle(warm_up: bool = False):
                     if not _wait_for_whatsapp(page):
                         return  # finally block handles ctx.close()
 
+                    _watchdog_heartbeat()  # beat after page load (can take 4+ min on 1GB)
+
                     # ── Phase 1: Read ──────────────────────────────────────────
                     # Multiple fallback selectors — WhatsApp Web updates DOM frequently
                     rows = page.locator('div[aria-label="Chat list"] > div').all()
@@ -1250,6 +1252,7 @@ def run_cycle(warm_up: bool = False):
                     logger.info(f"Found {len(rows)} chats, checking first {CHATS_TO_CHECK}")
 
                     for i, row in enumerate(rows[:CHATS_TO_CHECK]):
+                        _watchdog_heartbeat()  # beat per chat (each takes 2-10s on 1GB)
                         try:
                             has_unread = False
                             if not warm_up:
@@ -1365,6 +1368,7 @@ def run_cycle(warm_up: bool = False):
                         log_action(sender, last_msg, reply, is_urgent(last_msg), sent)
 
                     # Phase 3.5 — Send any vault/Approved/WhatsApp/ drafts
+                    _watchdog_heartbeat()
                     try:
                         _send_vault_whatsapp_drafts(page)
                     except Exception as e:
@@ -1404,7 +1408,7 @@ def run_cycle(warm_up: bool = False):
 # PM2 auto-restarts the process, giving us a clean slate.
 
 _watchdog_last_heartbeat = time.monotonic()
-_WATCHDOG_TIMEOUT = 600  # 10 minutes — same as CYCLE_TIMEOUT
+_WATCHDOG_TIMEOUT = 900  # 15 minutes — 1GB server needs extra time for warm-up
 
 def _watchdog_heartbeat():
     """Call this from the main loop to signal the watchdog we're alive."""
