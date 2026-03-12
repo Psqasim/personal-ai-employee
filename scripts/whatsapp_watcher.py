@@ -452,7 +452,7 @@ def _wait_for_whatsapp(page) -> bool:
     # ARM VM the chat list element can be in the DOM but Playwright doesn't consider
     # it "visible" until the full React tree renders, which can exceed 90s.
     try:
-        page.wait_for_selector(f'{CHAT_LIST}, {QR_CODE}', timeout=90000, state='attached')
+        page.wait_for_selector(f'{CHAT_LIST}, {QR_CODE}', timeout=30000, state='attached')
     except PlaywrightTimeout:
         # WhatsApp Web may have updated their DOM — check if page is actually
         # loaded even though selectors don't match (DOM structure changed)
@@ -1450,11 +1450,16 @@ def run():
         _watchdog_heartbeat()  # tell watchdog we're alive
         try:
             if not _warmed_up:
-                # First cycle: read all current messages into cache WITHOUT replying.
-                # This ensures we only respond to messages that arrive AFTER startup.
-                logger.info("🔧 Warm-up cycle: reading existing messages (no replies sent)...")
-                run_cycle(warm_up=True)
-                _warmed_up = True
+                # If cache already has entries from disk, skip the slow warm-up cycle.
+                # Warm-up reads all 10 chats to populate cache — takes 10+ min on 1GB.
+                # The persisted cache already prevents re-replying to old messages.
+                if len(_replied_cache) >= 3:
+                    logger.info(f"♻️ Skipping warm-up — cache has {len(_replied_cache)} entries from disk")
+                    _warmed_up = True
+                else:
+                    logger.info("🔧 Warm-up cycle: reading existing messages (no replies sent)...")
+                    run_cycle(warm_up=True)
+                    _warmed_up = True
             else:
                 run_cycle()
         except Exception as e:
