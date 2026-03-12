@@ -488,11 +488,10 @@ def _wait_for_whatsapp(page) -> bool:
             'div.landing-title',
             'div.app-wrapper-web.no-list',
         ]
-    ) or (
-        # App loaded but neither chat list nor pane-side exists = session expired
-        page.locator('div.app-wrapper-web').count() > 0
-        and page.locator(CHAT_LIST).count() == 0
     )
+    # NOTE: removed the "chat list absent = session expired" fallback because
+    # WhatsApp Web DOM updates can make CHAT_LIST selectors stale while
+    # the page is actually loaded. The title-based check above is sufficient.
     if is_login_page:
         logger.error("Login page shown — session expired. Re-run wa_reauth.py")
         return False
