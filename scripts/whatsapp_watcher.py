@@ -1219,6 +1219,30 @@ def run_cycle(warm_up: bool = False):
                                         break
                         except Exception as e:
                             logger.debug(f"JS chat fallback error: {e}")
+                    if not rows:
+                        # DOM diagnostic: dump available selectors for debugging
+                        try:
+                            dom_info = page.evaluate("""() => {
+                                const testids = new Set();
+                                const roles = new Set();
+                                const labels = new Set();
+                                document.querySelectorAll('[data-testid]').forEach(el =>
+                                    testids.add(el.getAttribute('data-testid')));
+                                document.querySelectorAll('[role]').forEach(el =>
+                                    roles.add(el.getAttribute('role')));
+                                document.querySelectorAll('[aria-label]').forEach(el =>
+                                    labels.add(el.getAttribute('aria-label')));
+                                return {
+                                    t: [...testids].sort().slice(0, 30),
+                                    r: [...roles].sort(),
+                                    a: [...labels].sort().slice(0, 20)
+                                };
+                            }""")
+                            logger.warning(f"DOM data-testid: {dom_info.get('t', [])}")
+                            logger.warning(f"DOM roles: {dom_info.get('r', [])}")
+                            logger.warning(f"DOM aria-labels: {dom_info.get('a', [])}")
+                        except Exception as e:
+                            logger.debug(f"DOM diagnostic failed: {e}")
                     logger.info(f"Found {len(rows)} chats, checking first {CHATS_TO_CHECK}")
 
                     for i, row in enumerate(rows[:CHATS_TO_CHECK]):
