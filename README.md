@@ -16,7 +16,7 @@
 
 ## Demo Video
 
-> **[Watch the Demo (YouTube)](https://youtu.be/PLACEHOLDER)** — 5-minute walkthrough of all features
+> **[Watch the Demo (YouTube)](https://youtu.be/vm0i13t1Z_4?si=QzAl7o0GIe4mWN2b)** — Full walkthrough of all features
 
 ---
 
