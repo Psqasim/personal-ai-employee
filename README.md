@@ -207,7 +207,7 @@ A **Digital Full-Time Employee (FTE)** that works 24/7 managing your business op
 | **Oracle Cloud VM** | ✅ Working | 3 PM2 processes running 24/7 |
 | **A2A Orchestration** | ✅ Working | Cloud writes → local claims → executes → Done/ |
 | **Next.js Dashboard** | ✅ Working | Glassmorphism admin panel at localhost:3000 |
-| LinkedIn | ⏸️ Token scope | MCP implemented, API token needs extra permissions |
+| LinkedIn | ✅ Working | MCP implemented, AI-generated posts published via API |
 | Twitter | ⏸️ API credit | MCP implemented, needs $5 API tier upgrade |
 
 ---
@@ -361,7 +361,7 @@ personal-ai-employee/
 | ![PM2 Oracle](public/screenshots/pm2-oracle.png) | PM2 processes running on Oracle Cloud VM |
 | ![WhatsApp](public/screenshots/whatsapp-chat.png) | WhatsApp auto-reply in action |
 | ![Odoo Invoice](public/screenshots/odoo-invoice.png) | Draft invoice created in Odoo |
-| ![Mobile](public/screenshots/mobile-view.png) | Responsive mobile dashboard view |
+| ![Obsidian Dashboard](public/obsidianDasboard.png) | Obsidian vault dashboard view |
 
 ---
 
